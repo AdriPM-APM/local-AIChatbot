@@ -3,71 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Local AI Character Chat</title>
+    <meta name="theme-color" content="#0a0612">
+    <title>Hubs — AI Character Chat</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Mock Ad Banner -->
+    <!-- Ad Banner (mock) -->
     <div id="ad-banner" class="ad-banner" role="complementary" aria-label="Advertisement">
-        <div class="ad-content" onclick="console.log('Ad clicked')">
-            📢 Ad space — click to test
-        </div>
+        <span class="ad-label">📢 Ad space — click to test</span>
         <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
     </div>
 
-    <!-- Mobile Menu Toggle -->
-    <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Toggle Menu">☰</button>
+    <!-- Mobile top bar -->
+    <header class="mobile-topbar">
+        <button id="mobile-menu-btn" class="icon-btn ghost" aria-label="Toggle menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <span class="mobile-title">Hubs</span>
+        <button id="mobile-settings-btn" class="icon-btn ghost" aria-label="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+    </header>
 
-    <!-- App Layout -->
-    <div class="app-container">
+    <div class="app-shell">
         <!-- Sidebar -->
         <aside id="sidebar" class="sidebar">
             <div class="sidebar-header">
-                <h1>Hubs</h1>
-                <button id="add-char-btn" class="icon-btn" aria-label="Add Character">+</button>
+                <div class="brand">
+                    <div class="brand-mark">H</div>
+                    <div>
+                        <h1>Hubs</h1>
+                        <p>Character Chat</p>
+                    </div>
+                </div>
+                <button id="add-char-btn" class="icon-btn accent" aria-label="Create character">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
             </div>
-            <div class="search-bar">
-                <input type="text" id="search-input" placeholder="Search characters...">
+
+            <div class="search-wrap">
+                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="search-input" placeholder="Search characters…">
             </div>
-            <div id="character-list" class="character-list">
-                <!-- Character cards inserted here -->
-            </div>
+
+            <div id="character-list" class="character-list"></div>
+
             <div class="sidebar-footer">
-                <button id="settings-btn" class="text-btn">⚙️ Settings</button>
+                <button id="settings-btn" class="footer-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    Settings
+                </button>
             </div>
         </aside>
 
-        <!-- Overlay for mobile sidebar -->
         <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
 
-        <!-- Main Chat Area -->
+        <!-- Chat area -->
         <main class="chat-area">
-            <div id="chat-header" class="chat-header">
-                <div class="char-info">
-                    <img id="chat-avatar" src="" alt="Avatar" class="chat-avatar hidden">
-                    <h2 id="chat-name">Select a Character</h2>
+            <header class="chat-header">
+                <div class="chat-identity">
+                    <img id="chat-avatar" class="chat-avatar hidden" alt="">
+                    <div class="chat-meta">
+                        <h2 id="chat-name">Select a character</h2>
+                        <p id="chat-subtitle">Pick from your hubs or create a new one</p>
+                    </div>
                 </div>
-                <button id="clear-chat-btn" class="text-btn hidden">Clear Chat</button>
-            </div>
+                <button id="clear-chat-btn" class="ghost-btn hidden">Clear chat</button>
+            </header>
+
             <div id="messages-container" class="messages-container">
-                <div class="empty-state">Select or create a character to start chatting.</div>
+                <div class="empty-state">
+                    <div class="empty-orb"></div>
+                    <h3>No conversation yet</h3>
+                    <p>Select or create a character to begin.</p>
+                </div>
             </div>
-            <div class="input-area">
-                <textarea id="message-input" placeholder="Type a message..." rows="1" disabled></textarea>
-                <button id="send-btn" class="send-btn" disabled>➤</button>
+
+            <div class="composer">
+                <div class="composer-inner">
+                    <textarea id="message-input" placeholder="Message your character…" rows="1" disabled></textarea>
+                    <button id="send-btn" class="send-btn" disabled aria-label="Send">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </div>
             </div>
         </main>
     </div>
 
     <!-- Settings Modal -->
     <div id="settings-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <div class="modal-header">
+        <div class="modal">
+            <div class="modal-head">
                 <h2>Settings</h2>
-                <button class="close-modal-btn" data-modal="settings-modal">✕</button>
+                <button class="icon-btn ghost close-modal-btn" data-modal="settings-modal" aria-label="Close">✕</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
+                <div class="field">
                     <label>Provider</label>
                     <select id="provider-select">
                         <option value="openrouter">OpenRouter</option>
@@ -79,55 +111,55 @@
                         <option value="custom">Custom (OpenAI Compatible)</option>
                     </select>
                 </div>
-                <div class="form-group">
+                <div class="field">
                     <label>API Key</label>
-                    <input type="password" id="api-key-input" placeholder="sk-...">
-                    <small>🔒 Stored locally in your browser only.</small>
+                    <input type="password" id="api-key-input" placeholder="Paste key…" autocomplete="off">
+                    <small>🔒 Stored only in your browser.</small>
                 </div>
-                <div class="form-group">
-                    <label>Model Name</label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="model-input" placeholder="e.g. google/gemma-2-9b-it:free" style="flex:1;">
-                        <button id="test-models-btn" class="primary-btn" style="padding: 0 12px; flex: none;">Test</button>
+                <div class="field">
+                    <label>Model</label>
+                    <div class="row">
+                        <input type="text" id="model-input" placeholder="e.g. gemini-2.0-flash">
+                        <button id="test-models-btn" class="pill-btn">Test</button>
                     </div>
-                    <small id="model-test-result" style="color: var(--accent); margin-top: 4px; display: none;"></small>
+                    <small id="model-test-result"></small>
                 </div>
-                <div class="form-group" id="base-url-group" style="display:none;">
-                    <label>Base URL (Custom)</label>
+                <div class="field" id="base-url-group" style="display:none;">
+                    <label>Base URL</label>
                     <input type="text" id="base-url-input" placeholder="https://api.example.com/v1">
                 </div>
-                <div class="form-group toggle-group">
-                    <label>Show Ads</label>
+                <div class="field row-between">
+                    <label>Show ads</label>
                     <label class="switch">
                         <input type="checkbox" id="show-ads-toggle" checked>
-                        <span class="slider round"></span>
+                        <span class="slider"></span>
                     </label>
                 </div>
-                <div class="form-actions">
-                    <button id="save-settings-btn" class="primary-btn">Save Locally</button>
-                    <button id="clear-data-btn" class="danger-btn">Clear All Data</button>
+                <div class="modal-actions">
+                    <button id="save-settings-btn" class="btn primary">Save</button>
+                    <button id="clear-data-btn" class="btn danger">Clear all data</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Character Creation Modal -->
+    <!-- Create Character Modal -->
     <div id="character-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Create Character</h2>
-                <button class="close-modal-btn" data-modal="character-modal">✕</button>
+        <div class="modal">
+            <div class="modal-head">
+                <h2>New Character</h2>
+                <button class="icon-btn ghost close-modal-btn" data-modal="character-modal" aria-label="Close">✕</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
+                <div class="field">
                     <label>Avatar</label>
                     <input type="file" id="char-avatar" accept="image/*">
                 </div>
-                <div class="form-group">
+                <div class="field">
                     <label>Name *</label>
-                    <input type="text" id="char-name" required placeholder="Character Name">
+                    <input type="text" id="char-name" placeholder="Character name">
                 </div>
-                <div class="form-group">
+                <div class="field">
                     <label>Gender</label>
                     <select id="char-gender">
                         <option value="Male">Male</option>
@@ -136,39 +168,38 @@
                         <option value="Other">Other</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Intro (Short Tagline)</label>
-                    <textarea id="char-intro" rows="2" placeholder="A brief description..."></textarea>
+                <div class="field">
+                    <label>Intro</label>
+                    <textarea id="char-intro" rows="2" placeholder="Short tagline"></textarea>
                 </div>
-                <div class="form-group">
-                    <label>Greetings (First Message)</label>
-                    <textarea id="char-greetings" rows="3" placeholder="Hello there!"></textarea>
+                <div class="field">
+                    <label>Greeting</label>
+                    <textarea id="char-greetings" rows="3" placeholder="First message from the character"></textarea>
                 </div>
-                <div class="form-group">
+                <div class="field">
                     <label>Backstory</label>
-                    <textarea id="char-backstory" rows="5" placeholder="Detailed history and personality..."></textarea>
+                    <textarea id="char-backstory" rows="4" placeholder="Detailed personality and history"></textarea>
                 </div>
-                <div class="form-group toggle-group">
-                    <label>Private Only</label>
+                <div class="field row-between">
+                    <label>Private only</label>
                     <label class="switch">
                         <input type="checkbox" id="char-private">
-                        <span class="slider round"></span>
+                        <span class="slider"></span>
                     </label>
                 </div>
-                <div class="form-group">
-                    <label>Tags (comma separated)</label>
-                    <input type="text" id="char-tags" placeholder="fantasy, sci-fi, assistant">
+                <div class="field">
+                    <label>Tags</label>
+                    <input type="text" id="char-tags" placeholder="fantasy, assistant, sci-fi">
                 </div>
-                <div class="form-actions">
-                    <button id="save-char-btn" class="primary-btn">Save Character</button>
-                    <label for="import-png" class="secondary-btn">Import from PNG</label>
+                <div class="modal-actions">
+                    <button id="save-char-btn" class="btn primary">Save character</button>
+                    <label for="import-png" class="btn secondary">Import PNG</label>
                     <input type="file" id="import-png" accept=".png" style="display:none;">
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
     <script src="app.js"></script>
