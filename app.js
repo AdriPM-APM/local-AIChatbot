@@ -15,7 +15,9 @@ let appData = {
         maxTokens: 1024,
         frequencyPenalty: 0.0,
         presencePenalty: 0.0,
-        disableReasoning: true
+        disableReasoning: true,
+        // Separate key so fallback never uses the wrong provider's key
+        openrouterFallbackKey: ''
     },
     adDismissed: false,
     characters: [],
@@ -131,10 +133,8 @@ function normalizeModelName(model, provider) {
 // ==========================================
 function cleanAIResponse(raw, characterName) {
     if (!raw) return '';
-
     let reply = raw;
 
-    // 0. Drop leading bulleted planning block
     const lines = raw.split('\n');
     let firstRealIdx = -1;
     for (let i = 0; i < lines.length; i++) {
@@ -145,15 +145,11 @@ function cleanAIResponse(raw, characterName) {
         firstRealIdx = i;
         break;
     }
-    if (firstRealIdx > 0) {
-        reply = lines.slice(firstRealIdx).join('\n');
-    }
+    if (firstRealIdx > 0) reply = lines.slice(firstRealIdx).join('\n');
 
-    // 1. Remove [REASONING] blocks
     reply = reply.replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/gi, '');
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
-    // 2. Remove leaked header lines
     const headerLines = [
         /^\s*\*\s*format\s*:.*$/gim,
         /^\s*\*\s*user\s+asks?\s*:.*$/gim,
@@ -171,7 +167,6 @@ function cleanAIResponse(raw, characterName) {
     ];
     for (const p of headerLines) reply = reply.replace(p, '');
 
-    // 3. Remove classic reasoning prefixes
     const prefixes = [
         /^\s*\*?\s*(reasoning|analysis|thoughts?|thinking|internal monologue|chain of thought|let me think|okay,?\s*so)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i,
         /^\s*(as an ai|i'm an ai|i am an ai|as a language model)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i,
@@ -179,23 +174,17 @@ function cleanAIResponse(raw, characterName) {
     ];
     for (const p of prefixes) reply = reply.replace(p, '');
 
-    // 4. Strip leading "Name:" prefix
     if (characterName) {
         const esc = characterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         reply = reply.replace(new RegExp(`^\\s*\\*?\\s*${esc}\\s*\\*?\\s*:\\s*`, 'i'), '');
     }
 
-    // 5. Cut off trailing meta
     const trailing = reply.search(/\n\s*\*?\s*(reasoning|analysis|thoughts?|note|ooc|end of response|format)\s*[:\-]/i);
     if (trailing !== -1) reply = reply.slice(0, trailing);
 
-    // 6. Remove THOUGHT: prefix
     reply = reply.replace(/^\s*THOUGHT\s*:\s*[\s\S]*?(?=\n\n|$)/i, '');
-
-    // 7. Collapse blank lines
     reply = reply.replace(/\n{3,}/g, '\n\n').trim();
 
-    // 8. Salvage fallback
     if (!reply) {
         const fallback = raw.split('\n').map(l => l.trim()).filter(Boolean);
         const spoken = fallback.reverse().find(l => /^["*]/.test(l) && !/^\*\s*\w+\s*:/.test(l));
@@ -281,7 +270,6 @@ function setupEventListeners() {
         renderAdBanner();
     });
 
-    // Sliders
     document.getElementById('temperature-slider')?.addEventListener('input', (e) => {
         document.getElementById('temperature-value').textContent = e.target.value;
     });
@@ -295,7 +283,6 @@ function setupEventListeners() {
         document.getElementById('max-tokens-value').textContent = e.target.value;
     });
 
-    // Disable reasoning toggle
     document.getElementById('disable-reasoning-toggle')?.addEventListener('change', (e) => {
         appData.aiSettings.disableReasoning = e.target.checked;
         saveData();
@@ -614,24 +601,39 @@ function clearCurrentChat() {
 // ==========================================
 async function callAIProviderWithFallback(character) {
     const settings = appData.aiSettings;
+    let primaryError = null;
+
     try {
         return await callAIProvider(character, settings);
     } catch (error) {
+        primaryError = error;
         console.warn(`Primary (${settings.provider}) failed:`, error.message);
-        if (settings.provider !== 'openrouter' && settings.apiKey) {
-            try {
-                return await callAIProvider(character, { ...settings, provider: 'openrouter', model: 'google/gemma-2-9b-it:free' });
-            } catch (e2) {
-                throw new Error(`All providers failed. ${error.message}`);
-            }
-        }
-        throw error;
     }
+
+    // Only try OpenRouter if we have a SEPARATE OpenRouter key.
+    // Never send a Gemini/OpenAI/etc. key to OpenRouter — it will reject it.
+    const fbKey = settings.openrouterFallbackKey;
+    if (settings.provider !== 'openrouter' && fbKey) {
+        try {
+            return await callAIProvider(character, {
+                ...settings,
+                provider: 'openrouter',
+                apiKey: fbKey,
+                model: 'google/gemma-2-9b-it:free'
+            });
+        } catch (fbErr) {
+            console.warn('OpenRouter fallback failed:', fbErr.message);
+            throw new Error(`Primary failed: ${primaryError.message}. Fallback failed: ${fbErr.message}`);
+        }
+    }
+
+    // No fallback configured — surface the original error with clear guidance
+    throw new Error(primaryError.message);
 }
 
 async function callAIProvider(character, settings) {
     if (!settings.apiKey && settings.provider !== 'ollama') {
-        throw new Error('API key missing — open Settings.');
+        throw new Error('API key missing — open Settings and paste your key.');
     }
 
     const model = normalizeModelName(settings.model, settings.provider);
@@ -797,26 +799,37 @@ Now answer the user's last message.`;
 
     try {
         const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.error?.message || `HTTP ${res.status}`);
+            const apiMsg = err.error?.message || err.message || `HTTP ${res.status}`;
+
+            // Add helpful hints for common errors
+            if (settings.provider === 'gemini' && /quota|limit: 0|free_tier/i.test(apiMsg)) {
+                throw new Error(`Gemini free tier exhausted for this project. Try a new Google Cloud project or switch to OpenRouter.`);
+            }
+            if (settings.provider === 'openrouter' && /auth/i.test(apiMsg)) {
+                throw new Error(`OpenRouter rejected your key. Keys must start with "sk-or-". Get one at openrouter.ai/keys`);
+            }
+            throw new Error(apiMsg);
         }
+
         const data = await res.json();
         let text = '';
         if (settings.provider === 'gemini') {
-            if (data.promptFeedback?.blockReason) throw new Error(`Blocked: ${data.promptFeedback.blockReason}`);
+            if (data.promptFeedback?.blockReason) throw new Error(`Gemini blocked: ${data.promptFeedback.blockReason}`);
             text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         } else if (settings.provider === 'anthropic') {
             text = data.content?.[0]?.text || '';
         } else {
             text = data.choices?.[0]?.message?.content || '';
         }
-        if (!text) throw new Error('Empty response');
+        if (!text) throw new Error('Empty response from provider — check your model name and quota.');
         return text;
     } catch (error) {
         console.error(`API Error (${settings.provider}):`, error);
         if (/NetworkError|Failed to fetch/.test(error.message)) {
-            throw new Error(`[${settings.provider}] Network error — try running locally or check your key.`);
+            throw new Error(`[${settings.provider}] Network error — check your key, model, and quota.`);
         }
         throw error;
     }
@@ -945,7 +958,8 @@ function saveSettings() {
         maxTokens: parseInt(document.getElementById('max-tokens-input')?.value ?? 1024, 10),
         frequencyPenalty: Number(appData.aiSettings.frequencyPenalty ?? 0),
         presencePenalty: Number(appData.aiSettings.presencePenalty ?? 0),
-        disableReasoning: document.getElementById('disable-reasoning-toggle')?.checked ?? true
+        disableReasoning: document.getElementById('disable-reasoning-toggle')?.checked ?? true,
+        openrouterFallbackKey: document.getElementById('openrouter-fallback-input')?.value.trim() ?? appData.aiSettings.openrouterFallbackKey ?? ''
     };
     saveData();
     closeModal('settings-modal');
@@ -974,6 +988,9 @@ function updateSettingsUI() {
 
     const dr = document.getElementById('disable-reasoning-toggle');
     if (dr) dr.checked = s.disableReasoning !== false;
+
+    const ofk = document.getElementById('openrouter-fallback-input');
+    if (ofk) ofk.value = s.openrouterFallbackKey || '';
 }
 
 function clearAllData() {
