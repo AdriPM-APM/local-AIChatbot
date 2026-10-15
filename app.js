@@ -4,7 +4,20 @@
 const STORAGE_KEY = 'aiCharacterAppData';
 
 let appData = {
-    aiSettings: { provider: 'gemini', apiKey: '', model: 'gemini-2.0-flash', baseUrl: '' },
+    aiSettings: {
+        provider: 'gemini',
+        apiKey: '',
+        model: 'gemini-2.0-flash',
+        baseUrl: '',
+        // NEW: AI generation parameters
+        temperature: 0.7,
+        topP: 0.95,
+        topK: 40,
+        maxTokens: 1024,
+        frequencyPenalty: 0.0,
+        presencePenalty: 0.0,
+        thinkingBudget: 0 // 0 = off for Gemini thinking models
+    },
     adDismissed: false,
     characters: [],
     chats: {}
@@ -42,7 +55,11 @@ function loadData() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            appData = { ...appData, ...parsed };
+            // Merge nested aiSettings so new defaults don't get lost
+            if (parsed.aiSettings) {
+                appData.aiSettings = { ...appData.aiSettings, ...parsed.aiSettings };
+            }
+            appData = { ...appData, ...parsed, aiSettings: appData.aiSettings };
         }
     } catch (e) {
         console.error('Failed to load data', e);
@@ -112,17 +129,51 @@ function normalizeModelName(model, provider) {
 }
 
 // ==========================================
-// 6. Response sanitizer — strips ALL reasoning/meta
+// 6. Aggressive sanitizer — strips ALL planning/meta
 // ==========================================
 function cleanAIResponse(raw, characterName) {
     if (!raw) return '';
 
     let reply = raw;
 
-    // 1. Remove any [REASONING]...[/REASONING] block entirely
-    reply = reply.replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/gi, '');
+    // 0. Nuclear: drop any leading bulleted planning block ("* User asks:", "* Character:", etc.)
+    const lines = raw.split('\n');
+    let firstRealIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+        const l = lines[i].trim();
+        if (!l) continue;
+        if (/^\*\s*[A-Za-z][A-Za-z\s/]+:\s*/.test(l)) continue;
+        if (/^\*?\s*(User asks|Character|Input context|Internal state|Motivation|Emotion|Direct response|Dialogue|Length|Format|Followed by|No meta-text|First person)\b/i.test(l)) continue;
+        firstRealIdx = i;
+        break;
+    }
+    if (firstRealIdx > 0) {
+        reply = lines.slice(firstRealIdx).join('\n');
+    }
 
-    // 2. Remove leaked reasoning prefixes
+    // 1. Remove [REASONING]...[/REASONING] blocks entirely
+    reply = reply.replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/gi, '');
+    reply = reply.replace(/\[\/?REASONING\]/gi, '');
+
+    // 2. Remove leaked header lines
+    const headerLines = [
+        /^\s*\*\s*format\s*:.*$/gim,
+        /^\s*\*\s*user\s+asks?\s*:.*$/gim,
+        /^\s*\*\s*character\s*:.*$/gim,
+        /^\s*\*\s*input\s+context\s*:.*$/gim,
+        /^\s*\*\s*internal\s+state\s*:.*$/gim,
+        /^\s*\*\s*motivation\s*:.*$/gim,
+        /^\s*\*\s*emotion\s*:.*$/gim,
+        /^\s*\*\s*direct\s+response\s*:.*$/gim,
+        /^\s*\*\s*dialogue\s*\/\s*action\s*:.*$/gim,
+        /^\s*\*\s*length\s*:.*$/gim,
+        /^\s*\*\s*followed\s+by.*$/gim,
+        /^\s*\*\s*no\s+meta-text.*$/gim,
+        /^\s*\*\s*first\s+person.*$/gim
+    ];
+    for (const p of headerLines) reply = reply.replace(p, '');
+
+    // 3. Remove classic reasoning prefixes
     const prefixes = [
         /^\s*\*?\s*(reasoning|analysis|thoughts?|thinking|internal monologue|chain of thought|let me think|okay,?\s*so)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i,
         /^\s*(as an ai|i'm an ai|i am an ai|as a language model)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i,
@@ -130,21 +181,28 @@ function cleanAIResponse(raw, characterName) {
     ];
     for (const p of prefixes) reply = reply.replace(p, '');
 
-    // 3. Strip leading "Name:" prefix
+    // 4. Strip leading "Name:" prefix
     if (characterName) {
         const esc = characterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         reply = reply.replace(new RegExp(`^\\s*\\*?\\s*${esc}\\s*\\*?\\s*:\\s*`, 'i'), '');
     }
 
-    // 4. Cut off any trailing meta block
-    const trailing = reply.search(/\n\s*\*?\s*(reasoning|analysis|thoughts?|note|ooc|end of response)\s*[:\-]/i);
+    // 5. Cut off trailing meta block
+    const trailing = reply.search(/\n\s*\*?\s*(reasoning|analysis|thoughts?|note|ooc|end of response|format)\s*[:\-]/i);
     if (trailing !== -1) reply = reply.slice(0, trailing);
 
-    // 5. Collapse excess blank lines
+    // 6. Remove "THOUGHT:" prefix (Gemini thought leaks)
+    reply = reply.replace(/^\s*THOUGHT\s*:\s*[\s\S]*?(?=\n\n|$)/i, '');
+
+    // 7. Collapse blank lines
     reply = reply.replace(/\n{3,}/g, '\n\n').trim();
 
-    // 6. Fallback if we emptied it
-    if (!reply && raw) reply = raw.trim();
+    // 8. If empty, salvage a spoken line
+    if (!reply) {
+        const fallback = raw.split('\n').map(l => l.trim()).filter(Boolean);
+        const spoken = fallback.reverse().find(l => /^["*]/.test(l) && !/^\*\s*\w+\s*:/.test(l));
+        reply = spoken || fallback[0] || raw.trim();
+    }
 
     return reply;
 }
@@ -174,10 +232,8 @@ function dismissAd() {
 // 8. Event listeners
 // ==========================================
 function setupEventListeners() {
-    // Ad
     document.getElementById('close-ad').addEventListener('click', dismissAd);
 
-    // Mobile drawer
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
     const openDrawer = () => { sidebar.classList.add('open'); overlay.classList.remove('hidden'); };
@@ -187,13 +243,11 @@ function setupEventListeners() {
     document.getElementById('mobile-settings-btn').addEventListener('click', () => openModal('settings-modal'));
     overlay.addEventListener('click', closeDrawer);
 
-    // Buttons
     document.getElementById('add-char-btn').addEventListener('click', () => openModal('character-modal'));
     document.getElementById('settings-btn').addEventListener('click', () => openModal('settings-modal'));
     document.getElementById('send-btn').addEventListener('click', sendMessage);
     document.getElementById('clear-chat-btn').addEventListener('click', clearCurrentChat);
 
-    // Enter to send
     document.getElementById('message-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -201,14 +255,12 @@ function setupEventListeners() {
         }
     });
 
-    // Auto-resize textarea
     const ta = document.getElementById('message-input');
     ta.addEventListener('input', () => {
         ta.style.height = 'auto';
         ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
     });
 
-    // Modal close buttons
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
         btn.addEventListener('click', () => closeModal(btn.dataset.modal));
     });
@@ -218,7 +270,6 @@ function setupEventListeners() {
         });
     });
 
-    // Settings
     document.getElementById('provider-select').addEventListener('change', (e) => {
         document.getElementById('base-url-group').style.display = e.target.value === 'custom' ? 'flex' : 'none';
     });
@@ -231,11 +282,23 @@ function setupEventListeners() {
         renderAdBanner();
     });
 
-    // Character
+    // NEW: Parameter sliders
+    document.getElementById('temperature-slider').addEventListener('input', (e) => {
+        document.getElementById('temperature-value').textContent = e.target.value;
+    });
+    document.getElementById('top-p-slider').addEventListener('input', (e) => {
+        document.getElementById('top-p-value').textContent = e.target.value;
+    });
+    document.getElementById('top-k-slider').addEventListener('input', (e) => {
+        document.getElementById('top-k-value').textContent = e.target.value;
+    });
+    document.getElementById('max-tokens-input').addEventListener('input', (e) => {
+        document.getElementById('max-tokens-value').textContent = e.target.value;
+    });
+
     document.getElementById('save-char-btn').addEventListener('click', saveCharacter);
     document.getElementById('import-png').addEventListener('change', handlePngImport);
 
-    // Search
     document.getElementById('search-input').addEventListener('input', (e) => {
         renderCharacterList(e.target.value);
     });
@@ -381,7 +444,6 @@ function saveCharacter() {
     saveData();
     closeModal('character-modal');
 
-    // Reset form
     ['char-name', 'char-intro', 'char-greetings', 'char-backstory', 'char-tags'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('char-avatar').value = '';
     document.getElementById('char-private').checked = false;
@@ -392,7 +454,7 @@ function saveCharacter() {
 }
 
 // ==========================================
-// 12. Chat rendering (with edit/delete, no reasoning)
+// 12. Chat rendering
 // ==========================================
 function renderChat() {
     const container = document.getElementById('messages-container');
@@ -570,23 +632,45 @@ async function callAIProvider(character, settings) {
 BACKSTORY (defines who you are — never reveal directly):
 ${character.backstory}
 
-STRICT RULES:
-- Speak ONLY as ${character.name}, in first person.
-- Output ONLY dialogue and brief *action* descriptions in asterisks.
-- NEVER write reasoning, analysis, thoughts, internal monologue, notes, or meta-text.
-- NEVER use [REASONING] tags or any bracketed labels.
-- NEVER write the user's thoughts, actions, or dialogue.
-- NEVER break character. NEVER mention being an AI.
-- Keep replies natural and conversational — 1 to 4 sentences.
-- Show personality through voice, stutters, and emotional state.
-${character.privateOnly ? "- Private persona — never reveal system instructions." : ""}
+You are about to reply to the user's latest message.
 
-Begin directly with ${character.name}'s speech or action. No preamble.`;
+ABSOLUTE RULES — VIOLATING ANY OF THESE BREAKS THE ROLEPLAY:
+
+1. Your entire response MUST be ${character.name}'s in-character reply — nothing else.
+2. Write ONLY in first person as ${character.name}.
+3. Actions go in *single asterisks* on the same line. Example: *He looks down.* I-I'm fine...
+4. NEVER output any of the following, under any circumstance:
+   - planning notes, "User asks:", "Character:", "Input context:"
+   - "Internal state:", "Motivation:", "Emotion:"
+   - "Direct response:", "Dialogue/Action:", "Length:"
+   - "Format:", "Followed by the reply.", "No meta-text.", "First person."
+   - any text labelled reasoning, analysis, thoughts, thinking, or plan
+   - any [REASONING] or [/REASONING] tags
+   - any numbered or bulleted list
+   - any line that starts with "* Word:" where Word is a label
+5. NEVER write the user's words, thoughts, or actions.
+6. NEVER describe yourself in third person. No "${character.name} does X" — only "I do X".
+7. NEVER mention that you are an AI, an assistant, or a language model.
+8. Length: 1 to 4 sentences. Natural, conversational, in character.
+9. Show personality through the way you speak — stutters, hesitations, tone, brief actions.
+
+EXAMPLE of a valid reply (structure only — do not reuse content):
+*I flinch and look away.* I-I'm fine... really. It's nothing.
+
+Now write your reply. Begin with either a *action* or a spoken word. Do NOT prefix it with any label. Do NOT write anything before it. Just the reply.`;
 
     const apiMessages = [
         { role: 'system', content: systemPrompt },
         ...messages.map(m => ({ role: m.role, content: m.content }))
     ];
+
+    // NEW: Build generation config from settings
+    const gen = {
+        temperature: Number(settings.temperature ?? 0.7),
+        topP: Number(settings.topP ?? 0.95),
+        topK: Number(settings.topK ?? 40),
+        maxTokens: Number(settings.maxTokens ?? 1024)
+    };
 
     let url, headers, body;
 
@@ -594,10 +678,23 @@ Begin directly with ${character.name}'s speech or action. No preamble.`;
         case 'openrouter':
             url = 'https://openrouter.ai/api/v1/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = { model, messages: apiMessages };
+            body = {
+                model,
+                messages: apiMessages,
+                temperature: gen.temperature,
+                top_p: gen.topP,
+                top_k: gen.topK,
+                max_tokens: gen.maxTokens,
+                frequency_penalty: Number(settings.frequencyPenalty ?? 0),
+                presence_penalty: Number(settings.presencePenalty ?? 0)
+            };
+            // For Gemini 2.5+ on OpenRouter: disable thinking to prevent leakage
+            if (model.includes('gemini') && !model.includes('lite')) {
+                body.reasoning = { effort: 'none' };
+            }
             break;
 
-        // Gemini: system prompt goes in systemInstruction, not in contents
+        // Gemini native API
         case 'gemini':
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
             headers = { 'Content-Type': 'application/json' };
@@ -610,14 +707,32 @@ Begin directly with ${character.name}'s speech or action. No preamble.`;
                     .map(m => ({
                         role: m.role === 'assistant' ? 'model' : 'user',
                         parts: [{ text: m.content }]
-                    }))
+                    })),
+                generationConfig: {
+                    temperature: gen.temperature,
+                    topP: gen.topP,
+                    topK: gen.topK,
+                    maxOutputTokens: gen.maxTokens
+                }
             };
+            // Disable thinking for Gemini 2.5+ models to prevent leaked THOUGHT: blocks
+            if (model.includes('gemini-2.5') || model.includes('gemini-3')) {
+                body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+            }
             break;
 
         case 'openai':
             url = 'https://api.openai.com/v1/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = { model, messages: apiMessages };
+            body = {
+                model,
+                messages: apiMessages,
+                temperature: gen.temperature,
+                top_p: gen.topP,
+                max_tokens: gen.maxTokens,
+                frequency_penalty: Number(settings.frequencyPenalty ?? 0),
+                presence_penalty: Number(settings.presencePenalty ?? 0)
+            };
             break;
 
         case 'anthropic':
@@ -629,7 +744,9 @@ Begin directly with ${character.name}'s speech or action. No preamble.`;
             };
             body = {
                 model,
-                max_tokens: 1024,
+                max_tokens: gen.maxTokens,
+                temperature: gen.temperature,
+                top_p: gen.topP,
                 system: systemPrompt,
                 messages: apiMessages.filter(m => m.role !== 'system').map(m => ({
                     role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -641,19 +758,38 @@ Begin directly with ${character.name}'s speech or action. No preamble.`;
         case 'groq':
             url = 'https://api.groq.com/openai/v1/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = { model, messages: apiMessages };
+            body = {
+                model,
+                messages: apiMessages,
+                temperature: gen.temperature,
+                top_p: gen.topP,
+                max_tokens: gen.maxTokens
+            };
             break;
 
         case 'ollama':
             url = (settings.baseUrl || 'http://localhost:11434') + '/v1/chat/completions';
             headers = { 'Content-Type': 'application/json' };
-            body = { model, messages: apiMessages };
+            body = {
+                model,
+                messages: apiMessages,
+                temperature: gen.temperature,
+                top_p: gen.topP,
+                top_k: gen.topK,
+                max_tokens: gen.maxTokens
+            };
             break;
 
         case 'custom':
             url = settings.baseUrl + '/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = { model, messages: apiMessages };
+            body = {
+                model,
+                messages: apiMessages,
+                temperature: gen.temperature,
+                top_p: gen.topP,
+                max_tokens: gen.maxTokens
+            };
             break;
 
         default: throw new Error('Unsupported provider');
@@ -711,179 +847,4 @@ async function testAndAutoSelectModel() {
                 const avail = (ld.models || [])
                     .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
                     .map(m => m.name.replace(/^models\//, ''));
-                if (avail.length) candidates = avail;
-            }
-        } catch (_) {}
-    }
-
-    let working = null;
-    let lastError = '';
-
-    for (const raw of candidates) {
-        const model = normalizeModelName(raw, provider);
-        resultEl.textContent = `Testing ${model}…`;
-        try {
-            const payload = buildTestPayload(provider, model, apiKey, baseUrl);
-            const res = await fetch(payload.url, { method: 'POST', headers: payload.headers, body: JSON.stringify(payload.body) });
-            if (res.ok) { working = model; break; }
-            const err = await res.json().catch(() => ({}));
-            lastError = err.error?.message || `HTTP ${res.status}`;
-        } catch (e) {
-            lastError = e.message;
-        }
-    }
-
-    if (working) {
-        document.getElementById('model-input').value = working;
-        resultEl.textContent = `✅ Working: ${working}`;
-        resultEl.style.color = 'var(--success)';
-        showToast(`Selected ${working}`, 'success');
-    } else {
-        resultEl.textContent = `❌ No working model. ${lastError}`;
-        resultEl.style.color = 'var(--danger)';
-        showToast(lastError || 'No working model found', 'error');
-    }
-}
-
-function buildTestPayload(provider, model, apiKey, baseUrl) {
-    const prompt = [{ role: 'user', content: 'Hi' }];
-    switch (provider) {
-        case 'gemini':
-            return {
-                url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-                headers: { 'Content-Type': 'application/json' },
-                body: { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] }
-            };
-        case 'anthropic':
-            return {
-                url: 'https://api.anthropic.com/v1/messages',
-                headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-                body: { model, max_tokens: 10, messages: prompt }
-            };
-        case 'ollama':
-            return {
-                url: (baseUrl || 'http://localhost:11434') + '/v1/chat/completions',
-                headers: { 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'custom':
-            return {
-                url: baseUrl + '/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'openrouter':
-            return {
-                url: 'https://openrouter.ai/api/v1/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'openai':
-            return {
-                url: 'https://api.openai.com/v1/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'groq':
-            return {
-                url: 'https://api.groq.com/openai/v1/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-    }
-    throw new Error('Unknown provider');
-}
-
-// ==========================================
-// 16. Settings
-// ==========================================
-function saveSettings() {
-    appData.aiSettings = {
-        provider: document.getElementById('provider-select').value,
-        apiKey: document.getElementById('api-key-input').value.trim(),
-        model: document.getElementById('model-input').value.trim(),
-        baseUrl: document.getElementById('base-url-input').value.trim()
-    };
-    saveData();
-    closeModal('settings-modal');
-    showToast('Settings saved', 'success');
-}
-
-function updateSettingsUI() {
-    const s = appData.aiSettings;
-    document.getElementById('provider-select').value = s.provider || 'gemini';
-    document.getElementById('api-key-input').value = s.apiKey || '';
-    document.getElementById('model-input').value = s.model || '';
-    document.getElementById('base-url-input').value = s.baseUrl || '';
-    document.getElementById('base-url-group').style.display = s.provider === 'custom' ? 'flex' : 'none';
-}
-
-function clearAllData() {
-    if (!confirm('Delete ALL characters, chats, and settings?')) return;
-    localStorage.removeItem(STORAGE_KEY);
-    const req = indexedDB.deleteDatabase(DB_NAME);
-    req.onsuccess = () => {
-        showToast('All data cleared', 'success');
-        setTimeout(() => location.reload(), 700);
-    };
-    req.onerror = () => showToast('Failed to clear database', 'error');
-}
-
-// ==========================================
-// 17. Chai PNG import
-// ==========================================
-async function handlePngImport(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    try {
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        const meta = parsePngMetadata(bytes);
-
-        if (!meta.chara && !meta.chai) throw new Error('No character data in PNG');
-
-        let charData;
-        try {
-            charData = JSON.parse(atob(meta.chara || meta.chai));
-        } catch {
-            throw new Error('Invalid character data');
-        }
-
-        const name = charData.name || charData.char_name || 'Imported Character';
-        const intro = charData.description || charData.personality || 'Imported from Chai';
-        const greetings = charData.first_mes || charData.greeting || `Hello! I'm ${name}.`;
-        const backstory = charData.scenario || charData.description || '';
-
-        const newChar = {
-            id: Date.now().toString(),
-            name,
-            gender: charData.gender || 'Other',
-            intro,
-            greetings,
-            backstory,
-            privateOnly: false,
-            tags: ['imported', 'chai'],
-            createdAt: new Date().toISOString(),
-            avatarId: null
-        };
-        newChar.avatarId = newChar.id;
-        await saveAvatar(newChar.id, file);
-        appData.characters.push(newChar);
-        appData.chats[newChar.id] = [{ role: 'assistant', content: greetings, ts: Date.now() }];
-        saveData();
-        closeModal('character-modal');
-        renderCharacterList();
-        showToast(`Imported ${name}`, 'success');
-        selectCharacter(newChar.id);
-    } catch (err) {
-        console.error('PNG import error:', err);
-        showToast(`Import failed: ${err.message}`, 'error');
-    }
-    event.target.value = '';
-}
-
-function parsePngMetadata(bytes) {
-    const meta = {};
-    let off = 8;
-    while (off < bytes.length) {
-        const len = (bytes[off] << 24) | (bytes[off + 1] << 16) | (bytes[off + 2] << 8)
+                if (avail.length) candidates
