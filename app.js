@@ -7,7 +7,7 @@ let appData = {
     aiSettings: {
         provider: 'gemini',
         apiKey: '',
-        model: 'gemini-3.8-flash', // Optimized default lightweight model
+        model: 'gemini-3.8-flash',
         baseUrl: '',
         temperature: 0.7,
         topP: 0.95,
@@ -27,7 +27,6 @@ let currentCharacterId = null;
 let isGenerating = false;
 
 const TEST_MODELS = {
-    // OpenRouter Free Tier models (Optimized for lightweight roleplay)
     openrouter: [
         'google/gemma-2-9b-it:free',
         'google/gemma-4-26b-a4b-it:free',
@@ -35,8 +34,6 @@ const TEST_MODELS = {
         'mistralai/mistral-7b-instruct:free',
         'deepseek/deepseek-r1:free'
     ],
-    
-    // Google AI Studio / Gemini API (Free Tier - Fast & Lightweight)
     gemini: [
         'gemini-3.8-flash',
         'gemini-3.6-flash',
@@ -47,30 +44,22 @@ const TEST_MODELS = {
         'gemma-2-27b-it',
         'gemma-2-9b-it'
     ],
-    
-    // OpenAI models
     openai: [
         'gpt-4o-mini',
         'gpt-4o',
         'o1-mini',
         'o3-mini'
     ],
-    
-    // Anthropic models
     anthropic: [
         'claude-3-5-sonnet-latest',
         'claude-3-5-haiku-latest',
         'claude-3-7-sonnet-latest'
     ],
-    
-    // Groq models (Blazing fast for real-time chat)
     groq: [
         'llama-3.1-8b-instant',
         'llama-3.3-70b-versatile',
         'mixtral-8x7b-32768'
     ],
-    
-    // Ollama (Local) models
     ollama: [
         'llama3.3',
         'llama3.2',
@@ -78,8 +67,6 @@ const TEST_MODELS = {
         'gemma2',
         'deepseek-r1'
     ],
-    
-    // Custom endpoint fallback
     custom: [
         'gpt-4o-mini'
     ]
@@ -167,7 +154,7 @@ function normalizeModelName(model, provider) {
     let m = model.trim();
     if (provider === 'gemini') {
         m = m.replace(/^[a-zA-Z0-9_-]+\//, '');
-        m = m.replace(/:[a-zA-Z0-9_-]+\$/, '');
+        m = m.replace(/:[a-zA-Z0-9_-]+$/, '');
     } else if (provider === 'openrouter') {
         if (!m.includes('/') && (m.startsWith('gemma') || m.startsWith('gemini'))) {
             m = 'google/' + m;
@@ -195,7 +182,7 @@ function cleanAIResponse(raw, characterName) {
     }
     if (firstRealIdx > 0) reply = lines.slice(firstRealIdx).join('\n');
 
-    reply = reply.replace(/[REASONING][\s\S]*?\[\/REASONING\]/gi, '');
+    reply = reply.replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/gi, '');
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
     const headerLines = [
@@ -405,7 +392,6 @@ function updateSettingsUI() {
     const baseUrlInput = document.getElementById('base-url-input');
     if (baseUrlInput) baseUrlInput.value = settings.baseUrl || '';
 
-    // Sliders
     ['temperature', 'top-p', 'top-k', 'max-tokens'].forEach(id => {
         const slider = document.getElementById(`${id}-slider` + (id === 'max-tokens' ? '-input' : ''));
         const valSpan = document.getElementById(`${id}-value`);
@@ -452,19 +438,117 @@ function clearAllData() {
     location.reload();
 }
 
+// ==========================================
+// 10. Automated Model Pinging & Auto-Select
+// ==========================================
 async function testAndAutoSelectModel() {
-    showToast('Testing available models...', 'info');
-    // Auto selects top working model or tests connectivity
-    updateSettingsUI();
-    showToast('Settings & models synchronized', 'success');
+    const provider = document.getElementById('provider-select')?.value || appData.aiSettings.provider;
+    const apiKey = document.getElementById('api-key-input')?.value.trim() || appData.aiSettings.apiKey;
+    const baseUrl = document.getElementById('base-url-input')?.value.trim() || appData.aiSettings.baseUrl;
+    const models = TEST_MODELS[provider];
+
+    if (!models || models.length === 0) {
+        showToast('No test models available for this provider.', 'error');
+        return;
+    }
+
+    if (!apiKey && provider !== 'ollama') {
+        showToast(`Please enter a valid API key for ${provider} first.`, 'error');
+        return;
+    }
+
+    showToast(`Pinging ${models.length} models for ${provider}...`, 'info');
+
+    for (const model of models) {
+        try {
+            showToast(`Testing model: ${model}...`, 'info');
+            const success = await pingModel(provider, model, apiKey, baseUrl);
+            if (success) {
+                // Apply to app data and update dropdown textbox
+                appData.aiSettings.provider = provider;
+                appData.aiSettings.apiKey = apiKey;
+                appData.aiSettings.model = model;
+                saveData();
+                updateSettingsUI();
+                showToast(`Success! Auto-selected working model: ${model}`, 'success');
+                return;
+            }
+        } catch (err) {
+            console.warn(`Model ${model} failed ping test:`, err.message);
+        }
+    }
+
+    showToast('All models failed for this provider. Check your API key or quota.', 'error');
+}
+
+async function pingModel(provider, model, apiKey, baseUrl) {
+    let url, headers, body;
+    const testMessages = [{ role: 'user', content: 'Hi' }];
+    const normalizedModel = normalizeModelName(model, provider);
+
+    // Strictly separate providers using their own specific endpoint format and key
+    switch (provider) {
+        case 'openrouter':
+            url = 'https://openrouter.ai/api/v1/chat/completions';
+            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
+            break;
+
+        case 'gemini':
+            url = `https://generativelanguage.googleapis.com/v1beta/models/${normalizedModel}:generateContent?key=${apiKey}`;
+            headers = { 'Content-Type': 'application/json' };
+            body = { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] };
+            break;
+
+        case 'openai':
+            url = 'https://api.openai.com/v1/chat/completions';
+            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
+            break;
+
+        case 'anthropic':
+            url = 'https://api.anthropic.com/v1/messages';
+            headers = {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json'
+            };
+            body = { model: normalizedModel, max_tokens: 5, messages: [{ role: 'user', content: 'Hi' }] };
+            break;
+
+        case 'groq':
+            url = 'https://api.groq.com/openai/v1/chat/completions';
+            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
+            break;
+
+        case 'ollama':
+            url = (baseUrl || 'http://localhost:11434') + '/v1/chat/completions';
+            headers = { 'Content-Type': 'application/json' };
+            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
+            break;
+
+        case 'custom':
+            if (!baseUrl) return false;
+            url = baseUrl + '/chat/completions';
+            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
+            break;
+
+        default:
+            return false;
+    }
+
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    return res.ok;
 }
 
 function handlePngImport(e) {
-    // Stub or placeholder for character card PNG import if needed
+    // Stub or placeholder for character card PNG import
 }
 
 // ==========================================
-// 10. Character rendering
+// 11. Character rendering
 // ==========================================
 async function renderCharacterList(searchTerm = '') {
     const list = document.getElementById('character-list');
@@ -544,7 +628,7 @@ async function selectCharacter(id) {
 }
 
 // ==========================================
-// 11. Character creation
+// 12. Character creation
 // ==========================================
 function saveCharacter() {
     const name = document.getElementById('char-name').value.trim();
@@ -593,7 +677,7 @@ function saveCharacter() {
 }
 
 // ==========================================
-// 12. Chat rendering
+// 13. Chat rendering
 // ==========================================
 function renderChat() {
     const container = document.getElementById('messages-container');
@@ -687,7 +771,7 @@ function addMessageToChat(role, content) {
 }
 
 // ==========================================
-// 13. Send message
+// 14. Send message
 // ==========================================
 async function sendMessage() {
     const input = document.getElementById('message-input');
@@ -739,7 +823,7 @@ function clearCurrentChat() {
 }
 
 // ==========================================
-// 14. Provider integration
+// 15. Provider integration
 // ==========================================
 async function callAIProviderWithFallback(character) {
     const settings = appData.aiSettings;
