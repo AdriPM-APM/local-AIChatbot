@@ -3,108 +3,224 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Local AI Chatbot - Polybuzz Style</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Local AI Chatbot</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #121212; color: #e0e0e0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        .app-container { width: 100%; max-width: 480px; height: 100%; background-color: #181818; display: flex; flex-direction: column; position: relative; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        @media (min-width: 481px) { .app-container { height: 90vh; border-radius: 24px; border: 1px solid #333; } }
+        .app-header { display: flex; align-items: center; padding: 12px 16px; background-color: #1f1f1f; border-bottom: 1px solid #2a2a2a; gap: 12px; }
+        .search-bar { flex: 1; display: flex; align-items: center; background-color: #2b2b2b; border-radius: 20px; padding: 8px 14px; }
+        .search-bar input { background: transparent; border: none; color: #fff; outline: none; width: 100%; font-size: 14px; }
+        .app-main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; position: relative; }
+        .view { display: none; height: 100%; flex-direction: column; }
+        .view.active { display: flex; }
+        .chat-list { display: flex; flex-direction: column; }
+        .chat-item { display: flex; align-items: center; padding: 12px 16px; gap: 14px; border-bottom: 1px solid #222; cursor: pointer; }
+        .chat-item:hover { background-color: #222; }
+        .avatar-md { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; }
+        .chat-info { flex: 1; overflow: hidden; }
+        .chat-info h4 { font-size: 16px; color: #fff; margin-bottom: 4px; }
+        .chat-info p { font-size: 13px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chat-room-header { display: flex; align-items: center; padding: 10px 16px; background-color: #1f1f1f; border-bottom: 1px solid #2a2a2a; gap: 12px; }
+        .icon-btn { background: none; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 6px; }
+        .chat-contact-info { display: flex; align-items: center; gap: 10px; flex: 1; }
+        .avatar-sm { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
+        
+        /* BLOQUE DE ANUNCIO CERRADO / PROTEGIDO (Preparado para Adsterra u otras redes) */
+        .closed-ad-banner { background-color: #111; border-bottom: 1px solid #222; padding: 6px; text-align: center; }
+        .ad-protected-wrapper { background: linear-gradient(135deg, #2a2a2a, #1a1a1a); border: 1px dashed #444; border-radius: 8px; padding: 8px; position: relative; }
+        .ad-tag { position: absolute; top: 2px; right: 6px; font-size: 9px; color: #f39c12; background: rgba(0,0,0,0.5); padding: 1px 4px; border-radius: 4px; }
+        
+        .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; background-color: #141414; }
+        .message { max-width: 80%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.4; word-break: break-word; }
+        .message.ai { background-color: #2b2d31; color: #e0e0e0; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .message.user { background-color: #ffffff; color: #121212; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .message strong { font-weight: bold; }
+        .message em { font-style: italic; color: #999; }
+        .message.user em { color: #555; }
+        .chat-input-area { display: flex; padding: 12px 16px; background-color: #1f1f1f; border-top: 1px solid #2a2a2a; gap: 10px; align-items: center; }
+        .chat-input-area input { flex: 1; background-color: #2b2b2b; border: none; border-radius: 20px; padding: 10px 16px; color: #fff; outline: none; font-size: 14px; }
+        .send-btn { background-color: #6c5ce7; color: #fff; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .bottom-nav { height: 60px; background-color: #1c1c1c; border-top: 1px solid #282828; display: flex; justify-content: space-around; align-items: center; }
+        .nav-item { background: none; border: none; display: flex; flex-direction: column; align-items: center; color: #777; font-size: 11px; gap: 4px; cursor: pointer; flex: 1; position: relative; }
+        .nav-item.active { color: #6c5ce7; }
+        .nav-item .badge { position: absolute; top: 2px; right: 28%; background-color: #ff4757; color: white; font-size: 9px; padding: 1px 4px; border-radius: 10px; }
+        .plus-circle { width: 42px; height: 42px; background-color: #6c5ce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; margin-top: -8px; }
+    </style>
 </head>
 <body>
     <div class="app-container">
-        <!-- Top Header -->
         <header class="app-header">
             <div class="search-bar">
-                <i class="fa-solid fa-search"></i>
                 <input type="text" id="searchInput" placeholder="Buscar personajes, chats...">
-            </div>
-            <div class="header-actions">
-                <i class="fa-solid fa-bell"></i>
             </div>
         </header>
 
-        <!-- Main Content Area -->
         <main class="app-main">
-            <!-- Home / Chat List View -->
+            <!-- Vista de Lista de Chats -->
             <div id="homeView" class="view active">
                 <div class="chat-list" id="chatList"></div>
             </div>
 
-            <!-- Chat Room View -->
-            <div id="chatView" class="view" style="display: none;">
+            <!-- Vista de Sala de Chat -->
+            <div id="chatView" class="view">
                 <div class="chat-room-header">
-                    <button id="backBtn" class="icon-btn"><i class="fa-solid fa-arrow-left"></i></button>
+                    <button id="backBtn" class="icon-btn">←</button>
                     <div class="chat-contact-info">
                         <img id="currentAvatar" src="" alt="Avatar" class="avatar-sm">
                         <div>
-                            <h3 id="currentName">Nombre del Personaje</h3>
-                            <span class="status-indicator">En línea</span>
+                            <h3 id="currentName"></h3>
+                            <span style="font-size: 11px; color: #4cd137;">En línea</span>
                         </div>
                     </div>
-                    <button class="icon-btn"><i class="fa-solid fa-ellipsis-vertical"></i></button>
                 </div>
 
-                <!-- Closed Ad Banner Component Example -->
-                <div id="adContainer" class="closed-ad-banner">
-                    <!-- PROPRIETARY CLOSED AD CODE START -->
-                    <div class="ad-placeholder">
+                <!-- BLOQUE DE ANUNCIO CERRADO / PROTEGIDO -->
+                <div class="closed-ad-banner">
+                    <div class="ad-protected-wrapper">
                         <span class="ad-tag">AD [CÓDIGO CERRADO]</span>
-                        <p>Banner Publicitario de Prueba (Protegido)</p>
+                        <!-- INICIO: Aquí puedes pegar tu script cerrado de Adsterra o banner propietario -->
+                        <div id="protected-ad-slot" style="min-height: 50px; display: flex; align-items: center; justify-content: center;">
+                            <p style="font-size: 12px; color: #aaa;">Banner publicitario de prueba (Código cerrado)</p>
+                        </div>
+                        <!-- FIN: Código cerrado -->
                     </div>
-                    <!-- PROPRIETARY CLOSED AD CODE END -->
                 </div>
 
                 <div class="chat-messages" id="chatMessages"></div>
 
                 <div class="chat-input-area">
                     <input type="text" id="messageInput" placeholder="Escribe un mensaje...">
-                    <button id="sendBtn" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
-                </div>
-            </div>
-
-            <!-- Explore View -->
-            <div id="exploreView" class="view" style="display: none;">
-                <div class="explore-content">
-                    <h2>Explorar Tendencias</h2>
-                </div>
-            </div>
-
-            <!-- Profile View -->
-            <div id="profileView" class="view" style="display: none;">
-                <div class="profile-content">
-                    <div class="profile-avatar-large">
-                        <i class="fa-solid fa-user"></i>
-                    </div>
-                    <h2>Usuario Local</h2>
-                    <p class="subtext">Configuración de cuenta y preferencias</p>
+                    <button id="sendBtn" class="send-btn">➤</button>
                 </div>
             </div>
         </main>
 
-        <!-- Bottom Navigation Bar -->
         <nav class="bottom-nav">
-            <button class="nav-item active" data-target="homeView">
-                <i class="fa-solid fa-house"></i>
-                <span>Inicio</span>
-            </button>
-            <button class="nav-item" data-target="chatListTab">
-                <i class="fa-solid fa-comments"></i>
-                <span>Chats</span>
-                <span class="badge">17</span>
-            </button>
-            <button class="nav-item plus-btn" data-target="createView">
-                <div class="plus-circle">
-                    <i class="fa-solid fa-plus"></i>
-                </div>
-            </button>
-            <button class="nav-item" data-target="exploreView">
-                <i class="fa-solid fa-compass"></i>
-                <span>Explorar</span>
-            </button>
-            <button class="nav-item" data-target="profileView">
-                <i class="fa-solid fa-user"></i>
-                <span>Perfil</span>
-            </button>
+            <button class="nav-item active" data-target="homeView"><span>🏠 Inicio</span></button>
+            <button class="nav-item"><span>💬 Chats</span><span class="badge">17</span></button>
+            <button class="nav-item"><div class="plus-circle">+</div></button>
+            <button class="nav-item"><span>🧭 Explorar</span></button>
+            <button class="nav-item"><span>👤 Perfil</span></button>
         </nav>
     </div>
 
-    <script src="app.js"></script>
+    <script>
+        const chatsData = [
+            {
+                id: 1,
+                name: "FPE",
+                avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+                preview: "*Plays funny track...* Hola, ¿qué tal?",
+                time: "14:14",
+                messages: [
+                    { sender: "ai", text: "*Plays funny track...* Hola, ¿qué tal?" },
+                    { sender: "user", text: "Hola **FPE**, todo bien por aquí." },
+                    { sender: "ai", text: "Me alegra **mucho** escuchar eso. ¿En qué te *puedo ayudar* hoy?" }
+                ]
+            },
+            {
+                id: 2,
+                name: "MHA FUTURE GEN",
+                avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
+                preview: "**With the defeat of All For One, Tomura Shigaraki...**",
+                time: "Ayer",
+                messages: [
+                    { sender: "ai", text: "**With the defeat of All For One, Tomura Shigaraki** ha desaparecido." },
+                    { sender: "user", text: "¿Cuál es el *siguiente paso* en la academia?" }
+                ]
+            }
+        ];
+
+        let currentChatId = null;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            renderChatList();
+            setupChatInteractions();
+        });
+
+        function renderChatList() {
+            const chatListEl = document.getElementById("chatList");
+            chatListEl.innerHTML = "";
+            chatsData.forEach(chat => {
+                const item = document.createElement("div");
+                item.className = "chat-item";
+                item.onclick = () => openChat(chat.id);
+                item.innerHTML = `
+                    <img src="${chat.avatar}" alt="${chat.name}" class="avatar-md">
+                    <div class="chat-info">
+                        <h4>${chat.name}</h4>
+                        <p>${chat.preview.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1')}</p>
+                    </div>
+                    <span style="font-size: 11px; color: #666;">${chat.time}</span>
+                `;
+                chatListEl.appendChild(item);
+            });
+        }
+
+        function formatMessageText(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>\$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>\$1</em>');
+        }
+
+        function openChat(chatId) {
+            currentChatId = chatId;
+            const chat = chatsData.find(c => c.id === chatId);
+            if (!chat) return;
+            document.getElementById("currentName").innerText = chat.name;
+            document.getElementById("currentAvatar").src = chat.avatar;
+            document.getElementById("homeView").classList.remove("active");
+            document.getElementById("chatView").classList.add("active");
+            renderMessages(chat.messages);
+        }
+
+        document.getElementById("backBtn").onclick = () => {
+            document.getElementById("chatView").classList.remove("active");
+            document.getElementById("homeView").classList.add("active");
+            currentChatId = null;
+        };
+
+        function renderMessages(messages) {
+            const container = document.getElementById("chatMessages");
+            container.innerHTML = "";
+            messages.forEach(msg => {
+                const msgEl = document.createElement("div");
+                msgEl.className = `message ${msg.sender}`;
+                msgEl.innerHTML = formatMessageText(msg.text);
+                container.appendChild(msgEl);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function setupChatInteractions() {
+            const sendBtn = document.getElementById("sendBtn");
+            const messageInput = document.getElementById("messageInput");
+
+            const handleSend = () => {
+                const text = messageInput.value.trim();
+                if (!text || currentChatId === null) return;
+                const chat = chatsData.find(c => c.id === currentChatId);
+                if (!chat) return;
+                chat.messages.push({ sender: "user", text });
+                messageInput.value = "";
+                renderMessages(chat.messages);
+
+                setTimeout(() => {
+                    chat.messages.push({ 
+                        sender: "ai", 
+                        text: `Entendido. Dijiste: *"${text}"*. ¿En qué más te *puedo ayudar*?` 
+                    });
+                    renderMessages(chat.messages);
+                }, 1000);
+            };
+
+            sendBtn.onclick = handleSend;
+            messageInput.onkeypress = (e) => {
+                if (e.key === "Enter") handleSend();
+            };
+        }
+    </script>
 </body>
 </html>
