@@ -1,90 +1,38 @@
-\# Local AI Character ChatBot
+# Local AI Character Chat
 
+A fully client-side AI Character Chat application. No backend required. All data stays in your browser.
 
+## Features
+- **Local Storage**: Characters, chats, and settings are stored in `localStorage` and `IndexedDB`.
+- **Multi-Provider Support**: OpenRouter, Google Gemini, OpenAI, Anthropic, Groq, Ollama, and custom OpenAI-compatible endpoints.
+- **Character Creation**: Create custom characters with avatars, backstories, greetings, and more.
+- **Chai AI PNG Import**: Drag and drop compatible PNG files to automatically import characters.
+- **Modern UI**: Glassmorphism design with dark/light mode, smooth animations, and responsive layout.
+- **Mock Ad Banner**: A dismissible ad placeholder that respects user preferences.
+- **Privacy First**: API keys are stored locally and only sent to the chosen provider. No telemetry.
 
-A fully local, single-page AI Character ChatBot web app that runs entirely in your browser. No backend server, no telemetry, and no build tools required.
+## How to Run
+1. Download or clone this repository.
+2. Ensure all three files (`index.html`, `styles.css`, `app.js`) are in the same folder.
+3. Open `index.html` in any modern browser (Chrome, Firefox, Safari, Edge).
+4. Alternatively, serve it using a local server: `python -m http.server`.
 
+## How to Add API Keys
+1. Click the **⚙️ Settings** button in the bottom left.
+2. Select your desired provider from the dropdown.
+3. Paste your API Key and specify the model name.
+4. Click **Save Locally**. The key is stored only in your browser.
 
+## How Chai Import Works
+The app includes a built-in PNG metadata parser. It scans for `tEXt` and `iTXt` chunks in PNG files, extracts character data (like `chara` or `chai` fields), decodes the Base64 JSON, and maps it to the app's character schema. Just click **Import from PNG** in the character creation modal.
 
-\## Features
-
-\- \*\*Privacy First\*\*: All data (characters, chats, API keys) is stored locally in your browser (localStorage + IndexedDB). No data is sent anywhere except to your chosen AI provider.
-
-\- \*\*Multiple AI Providers\*\*: Supports OpenRouter, Google Gemini, OpenAI, Anthropic, and custom OpenAI-compatible endpoints.
-
-\- \*\*Chai AI PNG Import\*\*: Drag and drop `.png` character cards exported from Chai to instantly import their avatar, name, greeting, and backstory.
-
-\- \*\*Modern UI\*\*: Glassmorphism design with dark/light mode, smooth animations, and full mobile responsiveness.
-
-\- \*\*No Dependencies\*\*: Zero external libraries or CDNs. Pure HTML, CSS, and vanilla JavaScript.
-
-
-
-\## How to Run
-
-1\. Download or clone this repository.
-
-2\. Open `index.html` in any modern web browser (Chrome, Firefox, Edge, Safari).
-
-3\. \*Optional\*: If you prefer serving it locally, run `python -m http.server` in the folder and visit `http://localhost:8000`.
-
-
-
-\## How to Add API Keys
-
-1\. Click the ⚙️ \*\*Settings\*\* icon in the top right corner of the sidebar.
-
-2\. Select your \*\*AI Provider\*\* from the dropdown.
-
-3\. Paste your \*\*API Key\*\* (e.g., OpenRouter, Gemini, OpenAI key).
-
-4\. Enter the \*\*Model Name\*\* you wish to use (e.g., `google/gemma-2-9b-it:free` for OpenRouter).
-
-5\. Click \*\*Save Locally\*\*. Your key is stored only in your browser's localStorage and is transmitted solely to the selected provider's API endpoint.
-
-
-
-\## How Chai AI Import Works
-
-Chai AI stores character data inside the metadata chunks (`tEXt`/`iTXt`) of exported PNG files under keys like `chara` or `chai`.
-
-1\. Drag and drop a Chai `.png` file anywhere onto the app, or click \*\*📥 Import PNG\*\*.
-
-2\. The app reads the binary PNG data, extracts the metadata, parses the JSON/Base64 payload.
-
-3\. It automatically maps the Chai fields (`name`, `first\_mes`, `personality`, `scenario`) to our character schema and saves the PNG as the avatar.
-
-4\. A toast notification confirms the import, and the new character is selected immediately.
-
-
-
-\## Tech Stack
-
-\- HTML5, CSS3 (Custom properties, Flexbox, Grid)
-
-\- Vanilla JavaScript (ES6+)
-
-\- IndexedDB (for avatar image storage)
-
-\- localStorage (for settings and chat history)
-
-\- FileReader API and DataView (for binary PNG parsing)
-
-
-
-\## Development
-
-This project is intentionally kept simple to ensure it remains fully local and hackable.
-
-\- `index.html`: Markup and modal templates.
-
-\- `styles.css`: All styling, dark/light theme variables, and responsive design.
-
-\- `app.js`: Logic for providers, chat engine, storage, PNG parser, and UI wiring.
-
-
-
-\## License
-
-MIT License. Feel free to use, modify, and distribute.
-
+## Acceptance Checklist
+- [x] Works offline except for the AI API call.
+- [x] Two+ provider options in dropdown.
+- [x] Dismissible test ad banner (X button + localStorage flag).
+- [x] + opens creation modal with all listed fields.
+- [x] Backstory is 100% user-authored and injected into system prompt.
+- [x] Chai AI PNG drag-drop import works instantly.
+- [x] All data saved locally; refresh preserves everything.
+- [x] Modern glass UI, dark/light, mobile responsive.
+- [x] API key stored only in localStorage, sent only to the chosen provider.
