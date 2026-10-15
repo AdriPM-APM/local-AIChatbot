@@ -27,13 +27,20 @@ let currentCharacterId = null;
 let isGenerating = false;
 
 // =========================================================
-// 🔑 ADSTERRA CONFIG — your real keys
+// 🔑 ADSTERRA CONFIG
 // =========================================================
 const ADSTERRA_CONFIG = {
-    banner: {
+    topBanner: {
         enabled: true,
         containerId: 'container-a3f099d87b664187036e6176973d0255',
         scriptSrc: 'https://archeryconditionssniff.com/a3f099d87b664187036e6176973d0255/invoke.js'
+    },
+    sidebarBanner: {
+        enabled: true,
+        key: 'a9543a4355279a22639348e9331bf68e',
+        width: 300,
+        height: 250,
+        invokeUrl: 'https://archeryconditionssniff.com'
     },
     popunder: {
         enabled: true,
@@ -42,6 +49,7 @@ const ADSTERRA_CONFIG = {
 };
 
 const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
+const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 
 // Prioritizes lighter, older, and high-efficiency models first
 const TEST_MODELS = {
@@ -251,7 +259,7 @@ function cleanAIResponse(raw, characterName) {
 }
 
 // ==========================================
-// 7. ADS — Banner + Popunder
+// 7. ADS — Top Banner (with friendly disable modal) + Sidebar + Popunder
 // ==========================================
 
 function isPopunderHiddenThisSession() {
@@ -265,9 +273,9 @@ function markPopunderVisible() {
     try { sessionStorage.removeItem(POPUNDER_SESSION_KEY); } catch (_) {}
 }
 
-/* ----- Banner (Adsterra Native) ----- */
-function loadAdsterraBanner() {
-    const cfg = ADSTERRA_CONFIG.banner;
+/* --- Top Banner --- */
+function loadAdsterraTopBanner() {
+    const cfg = ADSTERRA_CONFIG.topBanner;
     const slot = document.getElementById(cfg.containerId);
     const fallback = document.getElementById('ad-fallback');
     if (!slot) return;
@@ -290,7 +298,7 @@ function loadAdsterraBanner() {
     slot.appendChild(s);
 }
 
-function renderAdBanner() {
+function renderTopAdBanner() {
     const banner = document.getElementById('ad-banner');
     if (!banner) return;
     if (appData.adDismissed) {
@@ -298,20 +306,22 @@ function renderAdBanner() {
         return;
     }
     banner.style.display = 'flex';
-    loadAdsterraBanner();
+    loadAdsterraTopBanner();
 }
 
-function dismissAd() {
+/** Called when the user confirms disabling via the friendly modal */
+function actuallyDismissTopAd() {
     appData.adDismissed = true;
     saveData();
 
     const banner = document.getElementById('ad-banner');
     if (banner) {
+        banner.classList.add('collapsed');
         banner.style.display = 'none';
         banner.innerHTML = '';
     }
 
-    // Remove any stray Adsterra overlays that may have escaped the container
+    // Clean any stray Adsterra overlays
     try {
         document.querySelectorAll(
             'body > iframe[src*="archeryconditionssniff"],' +
@@ -319,9 +329,79 @@ function dismissAd() {
             'body > div[id^="container-"]'
         ).forEach(el => el.remove());
     } catch (_) {}
+
+    showToast('Top banner disabled. Popunder & sidebar ad stay on to support Hubs.', 'info');
 }
 
-/* ----- Popunder (Adsterra) ----- */
+/** Opens the friendly "are you sure?" modal */
+function requestDisableTopAd() {
+    // If already dismissed, do nothing
+    if (appData.adDismissed) return;
+    openModal('disable-ads-modal');
+}
+
+/* --- Sidebar Banner --- */
+function isSidebarAdDismissed() {
+    try { return localStorage.getItem(SIDEBAR_AD_DISMISSED_KEY) === '1'; }
+    catch (_) { return false; }
+}
+function markSidebarAdDismissed() {
+    try { localStorage.setItem(SIDEBAR_AD_DISMISSED_KEY, '1'); } catch (_) {}
+}
+
+function loadAdsterraSidebarBanner() {
+    const cfg = ADSTERRA_CONFIG.sidebarBanner;
+    const slot = document.getElementById('sidebar-ad-slot');
+    const fallback = document.getElementById('sidebar-ad-fallback');
+    if (!slot) return;
+
+    if (!cfg.enabled || !cfg.key) {
+        slot.innerHTML = '';
+        if (fallback) fallback.style.display = 'inline';
+        return;
+    }
+
+    if (fallback) fallback.style.display = 'none';
+    slot.innerHTML = '';
+
+    window.atOptions = {
+        key: cfg.key,
+        format: 'iframe',
+        height: cfg.height,
+        width: cfg.width,
+        params: {}
+    };
+
+    const s = document.createElement('script');
+    s.type = 'text/javascript';
+    s.async = true;
+    s.src = `${cfg.invokeUrl}/${cfg.key}/invoke.js`;
+    s.onerror = () => { if (fallback) fallback.style.display = 'inline'; };
+    slot.appendChild(s);
+}
+
+function renderSidebarAd() {
+    const wrap = document.getElementById('sidebar-ad');
+    if (!wrap) return;
+    if (isSidebarAdDismissed()) {
+        wrap.classList.add('hidden');
+        return;
+    }
+    wrap.classList.remove('hidden');
+    loadAdsterraSidebarBanner();
+}
+
+function dismissSidebarAd() {
+    markSidebarAdDismissed();
+    const wrap = document.getElementById('sidebar-ad');
+    if (wrap) {
+        wrap.classList.add('hidden');
+        const slot = document.getElementById('sidebar-ad-slot');
+        if (slot) slot.innerHTML = '';
+    }
+}
+
+/* --- Popunder --- */
 function loadAdsterraPopunder() {
     const cfg = ADSTERRA_CONFIG.popunder;
     if (!cfg.enabled) return;
@@ -369,58 +449,85 @@ function hidePopunder() {
     hidePopunderPill();
 }
 
-/* ----- Close button: bulletproof wiring -----
-   Adsterra's native banner script attaches a click handler on document
-   (capture phase) that hijacks clicks. We must:
-     1. Attach in CAPTURE phase with highest priority
-     2. stopImmediatePropagation() + preventDefault()
-     3. Also handle pointerdown/touchstart for mobile
-*/
-function wireCloseButton() {
-    const btn = document.getElementById('close-ad');
-    if (!btn || btn.dataset.wired === '1') return;
-    btn.dataset.wired = '1';
+/* --- Close buttons: capture-phase, cannot be hijacked by Adsterra --- */
+function wireCloseButtons() {
+    const wire = (btn, handler) => {
+        if (!btn || btn.dataset.wired === '1') return;
+        btn.dataset.wired = '1';
 
-    const handler = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        dismissAd();
+        const wrapped = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            handler();
+        };
+
+        btn.addEventListener('click', wrapped, true);
+        btn.addEventListener('pointerdown', wrapped, true);
+        btn.addEventListener('touchstart', wrapped, { capture: true, passive: false });
     };
 
-    btn.addEventListener('click', handler, true);
-    btn.addEventListener('pointerdown', handler, true);
-    btn.addEventListener('touchstart', handler, { capture: true, passive: false });
+    // Top banner ✕ -> opens friendly modal
+    wire(document.getElementById('close-ad'), requestDisableTopAd);
 
-    const wrapper = document.getElementById('ad-banner');
-    if (wrapper) {
-        ['click', 'pointerdown', 'touchstart'].forEach(type => {
-            wrapper.addEventListener(type, (e) => {
-                if (e.target && e.target.id === 'close-ad') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-                }
-            }, true);
+    // Sidebar ✕ -> direct dismiss (no modal, it's the money ad)
+    wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
+
+    // Block propagation of close-button clicks from reaching Adsterra
+    [document.getElementById('ad-banner'), document.getElementById('sidebar-ad')]
+        .filter(Boolean)
+        .forEach(wrapper => {
+            ['click', 'pointerdown', 'touchstart'].forEach(type => {
+                wrapper.addEventListener(type, (e) => {
+                    const t = e.target;
+                    if (t && (t.id === 'close-ad' || t.id === 'sidebar-ad-close')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                    }
+                }, true);
+            });
         });
-    }
 }
 
-/* ----- Boot: force both ads ON every load ----- */
+/* --- Boot --- */
 function initAds() {
-    renderAdBanner();
-    wireCloseButton();
+    // Top banner
+    renderTopAdBanner();
 
+    // Sidebar banner (always shown unless user explicitly dismissed previously)
+    renderSidebarAd();
+
+    // Wire all close buttons
+    wireCloseButtons();
+
+    // === Disable-ads modal buttons ===
+    document.getElementById('confirm-disable-ads')?.addEventListener('click', () => {
+        actuallyDismissTopAd();
+        closeModal('disable-ads-modal');
+    });
+    document.getElementById('keep-ads')?.addEventListener('click', () => {
+        closeModal('disable-ads-modal');
+    });
+
+    // Settings toggles
     const bannerToggle = document.getElementById('show-ads-toggle');
     if (bannerToggle) {
         bannerToggle.checked = !appData.adDismissed;
         bannerToggle.addEventListener('change', (e) => {
-            appData.adDismissed = !e.target.checked;
-            saveData();
-            renderAdBanner();
+            if (e.target.checked) {
+                appData.adDismissed = false;
+                saveData();
+                renderTopAdBanner();
+            } else {
+                // Show friendly modal instead of immediately disabling
+                e.target.checked = true;
+                requestDisableTopAd();
+            }
         });
     }
 
+    // Popunder
     if (isPopunderHiddenThisSession()) {
         hidePopunderPill();
     } else {
