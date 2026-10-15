@@ -9,17 +9,18 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Ad Banner (Adsterra) -->
+    <!-- Ad Banner (Adsterra Native Banner) -->
     <div id="ad-banner" class="ad-banner" role="complementary" aria-label="Advertisement">
         <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
         <div class="ad-inner">
-            <div id="adsterra-slot"></div>
-            <span id="ad-fallback" class="ad-label">📢 Ad space — click to test</span>
+            <!-- Adsterra injects into this container -->
+            <div id="container-a3f099d87b664187036e6176973d0255"></div>
+            <span id="ad-fallback" class="ad-label">📢 Ad space</span>
         </div>
     </div>
 
-    <!-- Popunder status pill (optional, so user knows popunder is active) -->
-    <div id="popunder-pill" class="popunder-pill" role="status" aria-live="polite">
+    <!-- Popunder status pill -->
+    <div id="popunder-pill" class="popunder-pill hidden" role="status" aria-live="polite">
         <span>Popunder: <b id="popunder-state">ON</b></span>
         <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder">Hide</button>
     </div>
@@ -134,7 +135,6 @@
                     <small id="model-test-result"></small>
                 </div>
 
-                <!-- AI PARAMETERS -->
                 <div class="field">
                     <label>Temperature <span id="temperature-value">0.7</span></label>
                     <input type="range" id="temperature-slider" min="0" max="2" step="0.05" value="0.7">
@@ -156,7 +156,6 @@
                     <small>Maximum length of the reply.</small>
                 </div>
 
-                <!-- Disable AI reasoning -->
                 <div class="field row-between">
                     <label>Disable AI reasoning</label>
                     <label class="switch">
@@ -254,11 +253,6 @@
     </div>
 
     <div id="toast-container" class="toast-container"></div>
-
-    <!-- =========================================================
-         POPUNDER (Adsterra) — loaded via app.js
-         We inject the script dynamically so we can hide/show it.
-         ========================================================= -->
 
     <script src="app.js"></script>
 </body>
