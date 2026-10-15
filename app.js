@@ -233,27 +233,118 @@ function cleanAIResponse(raw, characterName) {
     return reply;
 }
 
-// ==========================================
-// 7. Ad banner
-// ==========================================
-function renderAdBanner() {
-    const banner = document.getElementById('ad-banner');
-    const toggle = document.getElementById('show-ads-toggle');
-    if (!banner || !toggle) return;
-    if (appData.adDismissed) {
-        banner.classList.add('hidden');
-        toggle.checked = false;
-    } else {
-        banner.classList.remove('hidden');
-        toggle.checked = true;
+/* =========================================================
+   ADS — Adsterra banner (self-contained)
+   =========================================================
+   HOW TO CONFIGURE:
+   1. Log into Adsterra → Websites → Add banner zone.
+   2. Copy the "atOptions" values (key + width + height).
+   3. Paste them into ADSTERRA_CONFIG below.
+   ========================================================= */
+
+const ADSTERRA_CONFIG = {
+    // 👇 PASTE YOUR ADSTERRA VALUES HERE 👇
+    key:    "",          // e.g. "abcdef1234567890abcdef1234567890"
+    width:  320,         // banner width  (Adsterra gives this)
+    height: 50,          // banner height (Adsterra gives this)
+    // 👆 ---------------------------------- 👆
+    invokeUrl: "https://www.highperformanceformat.com" // default Adsterra invoke host
+};
+
+const AD_BANNER   = document.getElementById("ad-banner");
+const AD_CLOSE    = document.getElementById("close-ad");
+const AD_SLOT     = document.getElementById("adsterra-slot");
+const AD_FALLBACK = document.getElementById("ad-fallback");
+const ADS_TOGGLE  = document.getElementById("show-ads-toggle");
+
+/* ---------- inject the Adsterra script ---------- */
+function loadAdsterraBanner() {
+    if (!AD_SLOT) return;
+
+    // Not configured → keep fallback text
+    if (!ADSTERRA_CONFIG.key) {
+        AD_SLOT.innerHTML = "";
+        if (AD_FALLBACK) AD_FALLBACK.style.display = "inline";
+        return;
+    }
+
+    if (AD_FALLBACK) AD_FALLBACK.style.display = "none";
+    AD_SLOT.innerHTML = "";
+
+    // Adsterra uses a global atOptions object + a script tag
+    window.atOptions = {
+        key:  ADSTERRA_CONFIG.key,
+        format: "iframe",
+        height: ADSTERRA_CONFIG.height,
+        width:  ADSTERRA_CONFIG.width,
+        params: {}
+    };
+
+    const s = document.createElement("script");
+    s.type = "text/javascript";
+    s.async = true;
+    s.src = `${ADSTERRA_CONFIG.invokeUrl}/${ADSTERRA_CONFIG.key}/invoke.js`;
+    s.onerror = () => {
+        // If blocked/failed, show fallback so layout doesn't collapse
+        if (AD_FALLBACK) AD_FALLBACK.style.display = "inline";
+    };
+    AD_SLOT.appendChild(s);
+}
+
+/* ---------- visibility helpers ---------- */
+function showAdBanner() {
+    if (!AD_BANNER) return;
+    AD_BANNER.style.display = "flex";
+    if (!AD_SLOT || !AD_SLOT.childElementCount) {
+        loadAdsterraBanner();
     }
 }
 
-function dismissAd() {
-    appData.adDismissed = true;
-    saveData();
-    renderAdBanner();
+function hideAdBanner() {
+    if (!AD_BANNER) return;
+    AD_BANNER.style.display = "none";
 }
+
+/* ---------- close (✕) ---------- */
+if (AD_CLOSE) {
+    AD_CLOSE.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hideAdBanner();
+    });
+}
+
+/* ---------- settings toggle ---------- */
+// Ads are FORCED ON at every page load / reset for max revenue.
+// The toggle only affects the CURRENT session until reload.
+if (ADS_TOGGLE) {
+    ADS_TOGGLE.addEventListener("change", () => {
+        if (ADS_TOGGLE.checked) {
+            showAdBanner();
+        } else {
+            hideAdBanner();
+        }
+    });
+}
+
+/* ---------- boot: ALWAYS turn ads ON at startup ---------- */
+(function initAds() {
+    // 1. Force the toggle to "on" visually
+    if (ADS_TOGGLE) ADS_TOGGLE.checked = true;
+
+    // 2. Force the banner visible
+    showAdBanner();
+
+    // 3. (Optional) if your app persists settings in localStorage,
+    //    overwrite the saved value so a refresh always re-enables ads.
+    try {
+        const raw = localStorage.getItem("hubs_settings");
+        if (raw) {
+            const s = JSON.parse(raw);
+            s.showAds = true;
+            localStorage.setItem("hubs_settings", JSON.stringify(s));
+        }
+    } catch (_) { /* ignore */ }
+})();
 
 // ==========================================
 // 8. Event listeners
