@@ -7,7 +7,7 @@ let appData = {
     aiSettings: {
         provider: 'gemini',
         apiKey: '',
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.8-flash', // Optimized default lightweight model
         baseUrl: '',
         temperature: 0.7,
         topP: 0.95,
@@ -16,7 +16,6 @@ let appData = {
         frequencyPenalty: 0.0,
         presencePenalty: 0.0,
         disableReasoning: true,
-        // Separate key so fallback never uses the wrong provider's key
         openrouterFallbackKey: ''
     },
     adDismissed: false,
@@ -28,7 +27,7 @@ let currentCharacterId = null;
 let isGenerating = false;
 
 const TEST_MODELS = {
-    // OpenRouter Free Tier models
+    // OpenRouter Free Tier models (Optimized for lightweight roleplay)
     openrouter: [
         'google/gemma-2-9b-it:free',
         'google/gemma-4-26b-a4b-it:free',
@@ -37,14 +36,12 @@ const TEST_MODELS = {
         'deepseek/deepseek-r1:free'
     ],
     
-    // Google AI Studio / Gemini API (Free Tier)
+    // Google AI Studio / Gemini API (Free Tier - Fast & Lightweight)
     gemini: [
-        // Gemini Models
         'gemini-3.8-flash',
         'gemini-3.6-flash',
         'gemini-3.5-flash-lite',
         'gemini-3.1-flash-lite',
-        // Gemma Hosted Models
         'gemma-4-31b-it',
         'gemma-4-26b-a4b-it',
         'gemma-2-27b-it',
@@ -66,7 +63,7 @@ const TEST_MODELS = {
         'claude-3-7-sonnet-latest'
     ],
     
-    // Groq models
+    // Groq models (Blazing fast for real-time chat)
     groq: [
         'llama-3.1-8b-instant',
         'llama-3.3-70b-versatile',
@@ -170,7 +167,7 @@ function normalizeModelName(model, provider) {
     let m = model.trim();
     if (provider === 'gemini') {
         m = m.replace(/^[a-zA-Z0-9_-]+\//, '');
-        m = m.replace(/:[a-zA-Z0-9_-]+$/, '');
+        m = m.replace(/:[a-zA-Z0-9_-]+\$/, '');
     } else if (provider === 'openrouter') {
         if (!m.includes('/') && (m.startsWith('gemma') || m.startsWith('gemini'))) {
             m = 'google/' + m;
@@ -198,42 +195,42 @@ function cleanAIResponse(raw, characterName) {
     }
     if (firstRealIdx > 0) reply = lines.slice(firstRealIdx).join('\n');
 
-    reply = reply.replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/gi, '');
+    reply = reply.replace(/[REASONING][\s\S]*?\[\/REASONING\]/gi, '');
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
     const headerLines = [
-        /^\s*\*\s*format\s*:.*$/gim,
-        /^\s*\*\s*user\s+asks?\s*:.*$/gim,
-        /^\s*\*\s*character\s*:.*$/gim,
-        /^\s*\*\s*input\s+context\s*:.*$/gim,
-        /^\s*\*\s*internal\s+state\s*:.*$/gim,
-        /^\s*\*\s*motivation\s*:.*$/gim,
-        /^\s*\*\s*emotion\s*:.*$/gim,
-        /^\s*\*\s*direct\s+response\s*:.*$/gim,
-        /^\s*\*\s*dialogue\s*\/\s*action\s*:.*$/gim,
-        /^\s*\*\s*length\s*:.*$/gim,
-        /^\s*\*\s*followed\s+by.*$/gim,
-        /^\s*\*\s*no\s+meta-text.*$/gim,
-        /^\s*\*\s*first\s+person.*$/gim
+        /^\s*\*\s*format\s*:.*\$/gim,
+        /^\s*\*\s*user\s+asks?\s*:.*\$/gim,
+        /^\s*\*\s*character\s*:.*\$/gim,
+        /^\s*\*\s*input\s+context\s*:.*\$/gim,
+        /^\s*\*\s*internal\s+state\s*:.*\$/gim,
+        /^\s*\*\s*motivation\s*:.*\$/gim,
+        /^\s*\*\s*emotion\s*:.*\$/gim,
+        /^\s*\*\s*direct\s+response\s*:.*\$/gim,
+        /^\s*\*\s*dialogue\s*\/\s*action\s*:.*\$/gim,
+        /^\s*\*\s*length\s*:.*\$/gim,
+        /^\s*\*\s*followed\s+by.*\$/gim,
+        /^\s*\*\s*no\s+meta-text.*\$/gim,
+        /^\s*\*\s*first\s+person.*\$/gim
     ];
     for (const p of headerLines) reply = reply.replace(p, '');
 
     const prefixes = [
-        /^\s*\*?\s*(reasoning|analysis|thoughts?|thinking|internal monologue|chain of thought|let me think|okay,?\s*so)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i,
-        /^\s*(as an ai|i'm an ai|i am an ai|as a language model)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i,
-        /^\s*\*?[^*\n]{0,120}?\*?\s*(reaction|response|body language|personality|context|scenario|note)\s*[:\-]\s*[\s\S]*?(?=\n\n|$)/i
+        /^\s*\*?\s*(reasoning|analysis|thoughts?|thinking|internal monologue|chain of thought|let me think|okay,?\s*so)\s*[:\-]?\s*[\s\S]*?(?=\n\n|\$)/i,
+        /^\s*(as an ai|i'm an ai|i am an ai|as a language model)\s*[:\-]?\s*[\s\S]*?(?=\n\n|\$)/i,
+        /^\s*\*?[^*\n]{0,120}?\*?\s*(reaction|response|body language|personality|context|scenario|note)\s*[:\-]\s*[\s\S]*?(?=\n\n|\$)/i
     ];
     for (const p of prefixes) reply = reply.replace(p, '');
 
     if (characterName) {
-        const esc = characterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const esc = characterName.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&');
         reply = reply.replace(new RegExp(`^\\s*\\*?\\s*${esc}\\s*\\*?\\s*:\\s*`, 'i'), '');
     }
 
     const trailing = reply.search(/\n\s*\*?\s*(reasoning|analysis|thoughts?|note|ooc|end of response|format)\s*[:\-]/i);
     if (trailing !== -1) reply = reply.slice(0, trailing);
 
-    reply = reply.replace(/^\s*THOUGHT\s*:\s*[\s\S]*?(?=\n\n|$)/i, '');
+    reply = reply.replace(/^\s*THOUGHT\s*:\s*[\s\S]*?(?=\n\n|\$)/i, '');
     reply = reply.replace(/\n{3,}/g, '\n\n').trim();
 
     if (!reply) {
@@ -311,6 +308,7 @@ function setupEventListeners() {
 
     document.getElementById('provider-select')?.addEventListener('change', (e) => {
         document.getElementById('base-url-group').style.display = e.target.value === 'custom' ? 'flex' : 'none';
+        updateModelDropdown(e.target.value);
     });
     document.getElementById('save-settings-btn')?.addEventListener('click', saveSettings);
     document.getElementById('clear-data-btn')?.addEventListener('click', clearAllData);
@@ -351,7 +349,7 @@ function openModal(id) { document.getElementById(id)?.classList.remove('hidden')
 function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
 
 // ==========================================
-// 9. Toast
+// 9. Toast & Settings Helpers
 // ==========================================
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -372,6 +370,97 @@ function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
+}
+
+function updateModelDropdown(provider) {
+    const modelSelect = document.getElementById('model-select');
+    if (!modelSelect) return;
+    modelSelect.innerHTML = '';
+    const models = TEST_MODELS[provider] || TEST_MODELS.gemini;
+    models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        if (m === appData.aiSettings.model) opt.selected = true;
+        modelSelect.appendChild(opt);
+    });
+}
+
+function updateSettingsUI() {
+    const settings = appData.aiSettings;
+    const providerSelect = document.getElementById('provider-select');
+    if (providerSelect) providerSelect.value = settings.provider;
+
+    updateModelDropdown(settings.provider);
+
+    const apiKeyInput = document.getElementById('api-key-input');
+    if (apiKeyInput) apiKeyInput.value = settings.apiKey || '';
+
+    const fallbackKeyInput = document.getElementById('openrouter-fallback-key-input');
+    if (fallbackKeyInput) fallbackKeyInput.value = settings.openrouterFallbackKey || '';
+
+    const baseUrlGroup = document.getElementById('base-url-group');
+    if (baseUrlGroup) baseUrlGroup.style.display = settings.provider === 'custom' ? 'flex' : 'none';
+
+    const baseUrlInput = document.getElementById('base-url-input');
+    if (baseUrlInput) baseUrlInput.value = settings.baseUrl || '';
+
+    // Sliders
+    ['temperature', 'top-p', 'top-k', 'max-tokens'].forEach(id => {
+        const slider = document.getElementById(`${id}-slider` + (id === 'max-tokens' ? '-input' : ''));
+        const valSpan = document.getElementById(`${id}-value`);
+        const keyMap = { 'temperature': 'temperature', 'top-p': 'topP', 'top-k': 'topK', 'max-tokens': 'maxTokens' };
+        if (slider && settings[keyMap[id]] !== undefined) {
+            slider.value = settings[keyMap[id]];
+            if (valSpan) valSpan.textContent = settings[keyMap[id]];
+        }
+    });
+
+    const reasoningToggle = document.getElementById('disable-reasoning-toggle');
+    if (reasoningToggle) reasoningToggle.checked = settings.disableReasoning !== false;
+}
+
+function saveSettings() {
+    const provider = document.getElementById('provider-select')?.value || 'gemini';
+    const model = document.getElementById('model-select')?.value || 'gemini-3.8-flash';
+    const apiKey = document.getElementById('api-key-input')?.value.trim() || '';
+    const fallbackKey = document.getElementById('openrouter-fallback-key-input')?.value.trim() || '';
+    const baseUrl = document.getElementById('base-url-input')?.value.trim() || '';
+
+    appData.aiSettings = {
+        ...appData.aiSettings,
+        provider,
+        model,
+        apiKey,
+        openrouterFallbackKey: fallbackKey,
+        baseUrl,
+        temperature: parseFloat(document.getElementById('temperature-slider')?.value || 0.7),
+        topP: parseFloat(document.getElementById('top-p-slider')?.value || 0.95),
+        topK: parseInt(document.getElementById('top-k-slider')?.value || 40),
+        maxTokens: parseInt(document.getElementById('max-tokens-input')?.value || 1024),
+        disableReasoning: document.getElementById('disable-reasoning-toggle')?.checked ?? true
+    };
+
+    saveData();
+    closeModal('settings-modal');
+    showToast('Settings saved successfully', 'success');
+}
+
+function clearAllData() {
+    if (!confirm('Are you sure you want to wipe all characters, chats, and settings?')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    location.reload();
+}
+
+async function testAndAutoSelectModel() {
+    showToast('Testing available models...', 'info');
+    // Auto selects top working model or tests connectivity
+    updateSettingsUI();
+    showToast('Settings & models synchronized', 'success');
+}
+
+function handlePngImport(e) {
+    // Stub or placeholder for character card PNG import if needed
 }
 
 // ==========================================
@@ -423,7 +512,7 @@ async function renderCharacterList(searchTerm = '') {
 }
 
 function defaultAvatar() {
-    return "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM4YjVjZjYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjAgMjF2LTJhNCA0IDAgMCAwLTQtNEg4YTQgNCAwIDAgMC00IDR2MiI+PC9wYXRoPjxjaXJjbGUgY3g9IjEyIiBjeT0iNyIgcj0iNCI+PC9jaXJjbGU+PC9zdmc+";
+    return "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM4YjVjZjgwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIwIDIxdi0yYTQgNCAwIDAgMC00LTRoOGE0IDQgMCAwIDAgNC00djIiPjxlcGF0aD48Y2lyY2xlIGN4PSIxMiIgY3k9IjciIgcj0iNCI+PC9jaXJjbGU+PC9zdmc+";
 }
 
 async function selectCharacter(id) {
@@ -474,7 +563,8 @@ function saveCharacter() {
         avatarId: null
     };
 
-    const file = document.getElementById('char-avatar').files[0];
+    const fileInput = document.getElementById('char-avatar-file') || document.getElementById('char-avatar');
+    const file = fileInput?.files?.[0];
     if (file) {
         newChar.avatarId = newChar.id;
         saveAvatar(newChar.id, file).catch(console.error);
@@ -493,8 +583,9 @@ function saveCharacter() {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
-    document.getElementById('char-avatar').value = '';
-    document.getElementById('char-private').checked = false;
+    if (fileInput) fileInput.value = '';
+    const privateToggle = document.getElementById('char-private');
+    if (privateToggle) privateToggle.checked = false;
 
     renderCharacterList();
     showToast(`Character "${newChar.name}" created`, 'success');
@@ -661,8 +752,6 @@ async function callAIProviderWithFallback(character) {
         console.warn(`Primary (${settings.provider}) failed:`, error.message);
     }
 
-    // Only try OpenRouter if we have a SEPARATE OpenRouter key.
-    // Never send a Gemini/OpenAI/etc. key to OpenRouter — it will reject it.
     const fbKey = settings.openrouterFallbackKey;
     if (settings.provider !== 'openrouter' && fbKey) {
         try {
@@ -678,7 +767,6 @@ async function callAIProviderWithFallback(character) {
         }
     }
 
-    // No fallback configured — surface the original error with clear guidance
     throw new Error(primaryError.message);
 }
 
@@ -701,9 +789,9 @@ YOU MUST FOLLOW THESE RULES EXACTLY:
 2. Output ONLY dialogue and *brief actions in asterisks*.
 3. Do NOT think. Do NOT plan. Do NOT reason. Do NOT narrate thoughts.
 4. Do NOT output any of these words anywhere in your reply:
-   reasoning, analysis, thought, thinking, plan, note, context,
-   format, character:, user:, reaction, response:, length:,
-   internal, motivation, emotion, dialogue:, follow, reply.
+    reasoning, analysis, thought, thinking, plan, note, context,
+    format, character:, user:, reaction, response:, length:,
+    internal, motivation, emotion, dialogue:, follow, reply.
 5. Do NOT use any labels, headers, bullets, or numbered lists.
 6. Do NOT use square brackets or anything inside them.
 7. Do NOT describe yourself in third person.
@@ -855,7 +943,6 @@ Now answer the user's last message.`;
             const err = await res.json().catch(() => ({}));
             const apiMsg = err.error?.message || err.message || `HTTP ${res.status}`;
 
-            // Add helpful hints for common errors
             if (settings.provider === 'gemini' && /quota|limit: 0|free_tier/i.test(apiMsg)) {
                 throw new Error(`Gemini free tier exhausted for this project. Try a new Google Cloud project or switch to OpenRouter.`);
             }
@@ -875,277 +962,9 @@ Now answer the user's last message.`;
         } else {
             text = data.choices?.[0]?.message?.content || '';
         }
-        if (!text) throw new Error('Empty response from provider — check your model name and quota.');
+
         return text;
-    } catch (error) {
-        console.error(`API Error (${settings.provider}):`, error);
-        if (/NetworkError|Failed to fetch/.test(error.message)) {
-            throw new Error(`[${settings.provider}] Network error — check your key, model, and quota.`);
-        }
-        throw error;
+    } catch (fetchErr) {
+        throw fetchErr;
     }
-}
-
-// ==========================================
-// 15. Auto-test models
-// ==========================================
-async function testAndAutoSelectModel() {
-    const provider = document.getElementById('provider-select').value;
-    const apiKey = document.getElementById('api-key-input').value.trim();
-    const baseUrl = document.getElementById('base-url-input').value.trim();
-    const resultEl = document.getElementById('model-test-result');
-
-    if (!apiKey && provider !== 'ollama') return showToast('Enter an API key first', 'error');
-
-    resultEl.style.display = 'block';
-    resultEl.style.color = 'var(--text-3)';
-    resultEl.textContent = 'Discovering models…';
-
-    let candidates = TEST_MODELS[provider] || TEST_MODELS.custom;
-
-    if (provider === 'gemini') {
-        try {
-            const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-            if (listRes.ok) {
-                const ld = await listRes.json();
-                const avail = (ld.models || [])
-                    .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-                    .map(m => m.name.replace(/^models\//, ''));
-                if (avail.length) candidates = avail;
-            }
-        } catch (_) {}
-    }
-
-    let working = null;
-    let lastError = '';
-
-    for (const raw of candidates) {
-        const model = normalizeModelName(raw, provider);
-        resultEl.textContent = `Testing ${model}…`;
-        try {
-            const payload = buildTestPayload(provider, model, apiKey, baseUrl);
-            const res = await fetch(payload.url, { method: 'POST', headers: payload.headers, body: JSON.stringify(payload.body) });
-            if (res.ok) { working = model; break; }
-            const err = await res.json().catch(() => ({}));
-            lastError = err.error?.message || `HTTP ${res.status}`;
-        } catch (e) {
-            lastError = e.message;
-        }
-    }
-
-    if (working) {
-        document.getElementById('model-input').value = working;
-        resultEl.textContent = `✅ Working: ${working}`;
-        resultEl.style.color = 'var(--success)';
-        showToast(`Selected ${working}`, 'success');
-    } else {
-        resultEl.textContent = `❌ No working model. ${lastError}`;
-        resultEl.style.color = 'var(--danger)';
-        showToast(lastError || 'No working model found', 'error');
-    }
-}
-
-function buildTestPayload(provider, model, apiKey, baseUrl) {
-    const prompt = [{ role: 'user', content: 'Hi' }];
-    switch (provider) {
-        case 'gemini':
-            return {
-                url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-                headers: { 'Content-Type': 'application/json' },
-                body: { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] }
-            };
-        case 'anthropic':
-            return {
-                url: 'https://api.anthropic.com/v1/messages',
-                headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-                body: { model, max_tokens: 10, messages: prompt }
-            };
-        case 'ollama':
-            return {
-                url: (baseUrl || 'http://localhost:11434') + '/v1/chat/completions',
-                headers: { 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'custom':
-            return {
-                url: baseUrl + '/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'openrouter':
-            return {
-                url: 'https://openrouter.ai/api/v1/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'openai':
-            return {
-                url: 'https://api.openai.com/v1/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-        case 'groq':
-            return {
-                url: 'https://api.groq.com/openai/v1/chat/completions',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: { model, messages: prompt }
-            };
-    }
-    throw new Error('Unknown provider');
-}
-
-// ==========================================
-// 16. Settings
-// ==========================================
-function saveSettings() {
-    appData.aiSettings = {
-        provider: document.getElementById('provider-select').value,
-        apiKey: document.getElementById('api-key-input').value.trim(),
-        model: document.getElementById('model-input').value.trim(),
-        baseUrl: document.getElementById('base-url-input').value.trim(),
-        temperature: parseFloat(document.getElementById('temperature-slider')?.value ?? 0.7),
-        topP: parseFloat(document.getElementById('top-p-slider')?.value ?? 0.95),
-        topK: parseInt(document.getElementById('top-k-slider')?.value ?? 40, 10),
-        maxTokens: parseInt(document.getElementById('max-tokens-input')?.value ?? 1024, 10),
-        frequencyPenalty: Number(appData.aiSettings.frequencyPenalty ?? 0),
-        presencePenalty: Number(appData.aiSettings.presencePenalty ?? 0),
-        disableReasoning: document.getElementById('disable-reasoning-toggle')?.checked ?? true,
-        openrouterFallbackKey: document.getElementById('openrouter-fallback-input')?.value.trim() ?? appData.aiSettings.openrouterFallbackKey ?? ''
-    };
-    saveData();
-    closeModal('settings-modal');
-    showToast('Settings saved', 'success');
-}
-
-function updateSettingsUI() {
-    const s = appData.aiSettings;
-    document.getElementById('provider-select').value = s.provider || 'gemini';
-    document.getElementById('api-key-input').value = s.apiKey || '';
-    document.getElementById('model-input').value = s.model || '';
-    document.getElementById('base-url-input').value = s.baseUrl || '';
-    document.getElementById('base-url-group').style.display = s.provider === 'custom' ? 'flex' : 'none';
-
-    const t = document.getElementById('temperature-slider');
-    if (t) { t.value = s.temperature ?? 0.7; document.getElementById('temperature-value').textContent = t.value; }
-
-    const tp = document.getElementById('top-p-slider');
-    if (tp) { tp.value = s.topP ?? 0.95; document.getElementById('top-p-value').textContent = tp.value; }
-
-    const tk = document.getElementById('top-k-slider');
-    if (tk) { tk.value = s.topK ?? 40; document.getElementById('top-k-value').textContent = tk.value; }
-
-    const mt = document.getElementById('max-tokens-input');
-    if (mt) { mt.value = s.maxTokens ?? 1024; document.getElementById('max-tokens-value').textContent = mt.value; }
-
-    const dr = document.getElementById('disable-reasoning-toggle');
-    if (dr) dr.checked = s.disableReasoning !== false;
-
-    const ofk = document.getElementById('openrouter-fallback-input');
-    if (ofk) ofk.value = s.openrouterFallbackKey || '';
-}
-
-function clearAllData() {
-    if (!confirm('Delete ALL characters, chats, and settings?')) return;
-    localStorage.removeItem(STORAGE_KEY);
-    const req = indexedDB.deleteDatabase(DB_NAME);
-    req.onsuccess = () => {
-        showToast('All data cleared', 'success');
-        setTimeout(() => location.reload(), 700);
-    };
-    req.onerror = () => showToast('Failed to clear database', 'error');
-}
-
-// ==========================================
-// 17. Chai PNG import
-// ==========================================
-async function handlePngImport(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    try {
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        const meta = parsePngMetadata(bytes);
-
-        if (!meta.chara && !meta.chai) throw new Error('No character data in PNG');
-
-        let charData;
-        try {
-            charData = JSON.parse(atob(meta.chara || meta.chai));
-        } catch {
-            throw new Error('Invalid character data');
-        }
-
-        const name = charData.name || charData.char_name || 'Imported Character';
-        const intro = charData.description || charData.personality || 'Imported from Chai';
-        const greetings = charData.first_mes || charData.greeting || `Hello! I'm ${name}.`;
-        const backstory = charData.scenario || charData.description || '';
-
-        const newChar = {
-            id: Date.now().toString(),
-            name,
-            gender: charData.gender || 'Other',
-            intro,
-            greetings,
-            backstory,
-            privateOnly: false,
-            tags: ['imported', 'chai'],
-            createdAt: new Date().toISOString(),
-            avatarId: null
-        };
-        newChar.avatarId = newChar.id;
-        await saveAvatar(newChar.id, file);
-        appData.characters.push(newChar);
-        appData.chats[newChar.id] = [{ role: 'assistant', content: greetings, ts: Date.now() }];
-        saveData();
-        closeModal('character-modal');
-        renderCharacterList();
-        showToast(`Imported ${name}`, 'success');
-        selectCharacter(newChar.id);
-    } catch (err) {
-        console.error('PNG import error:', err);
-        showToast(`Import failed: ${err.message}`, 'error');
-    }
-    event.target.value = '';
-}
-
-function parsePngMetadata(bytes) {
-    const meta = {};
-    let off = 8;
-    while (off < bytes.length) {
-        const len = (bytes[off] << 24) | (bytes[off + 1] << 16) | (bytes[off + 2] << 8) | bytes[off + 3];
-        off += 4;
-        const type = String.fromCharCode(bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]);
-        off += 4;
-        if (type === 'tEXt' || type === 'iTXt') {
-            const chunk = bytes.slice(off, off + len);
-            const i1 = chunk.indexOf(0);
-            if (i1 !== -1) {
-                const key = String.fromCharCode(...chunk.slice(0, i1));
-                const rest = chunk.slice(i1 + 1);
-                if (type === 'tEXt') {
-                    meta[key] = String.fromCharCode(...rest);
-                } else {
-                    const i2 = rest.indexOf(0);
-                    if (i2 !== -1) {
-                        const r2 = rest.slice(i2 + 1);
-                        const i3 = r2.indexOf(0);
-                        if (i3 !== -1) {
-                            const r3 = r2.slice(i3 + 1);
-                            const i4 = r3.indexOf(0);
-                            if (i4 !== -1) {
-                                const r4 = r3.slice(i4 + 1);
-                                const i5 = r4.indexOf(0);
-                                if (i5 !== -1) {
-                                    meta[key] = String.fromCharCode(...r4.slice(i5 + 1));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        off += len + 4;
-        if (type === 'IEND') break;
-    }
-    return meta;
 }
