@@ -37,7 +37,6 @@
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
     --shadow-md: 0 6px 24px rgba(0,0,0,0.35);
     --shadow-lg: 0 20px 60px rgba(0,0,0,0.5);
-    --glow-violet: 0 0 0 1px rgba(139,92,246,0.4), 0 8px 30px rgba(139,92,246,0.28);
 }
 
 @media (prefers-color-scheme: light) {
@@ -77,7 +76,7 @@ body {
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 input, textarea, select { font-family: inherit; }
 
-/* ===== TOP AD BANNER (compact, easy to close) ===== */
+/* ===== TOP AD BANNER ===== */
 .ad-banner {
     position: relative;
     width: 100%;
@@ -91,7 +90,6 @@ input, textarea, select { font-family: inherit; }
     overflow: hidden;
     z-index: 50;
     isolation: isolate;
-    transition: max-height 0.25s ease, min-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
 }
 .ad-banner.collapsed {
     min-height: 0;
@@ -156,54 +154,12 @@ input, textarea, select { font-family: inherit; }
     justify-content: center;
     transition: background .15s ease, transform .15s ease;
     box-shadow: 0 2px 8px rgba(0,0,0,.5);
-    -webkit-tap-highlight-color: transparent;
     opacity: 0.7;
 }
 .ad-close:hover { background: rgba(139,92,246,0.95); transform: scale(1.08); opacity: 1; }
 .ad-close:active { transform: scale(0.92); }
 
-/* ===== Popunder pill — top-left, never blocks composer ===== */
-.popunder-pill {
-    position: fixed;
-    top: 12px;
-    left: 12px;
-    bottom: auto;
-    right: auto;
-    z-index: 80;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    background: rgba(20, 14, 34, .92);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 999px;
-    color: #cfc6e6;
-    font-size: 12px;
-    letter-spacing: .3px;
-    backdrop-filter: blur(6px);
-    box-shadow: 0 6px 20px rgba(0,0,0,.35);
-    transition: opacity .2s ease, transform .2s ease;
-}
-.popunder-pill b { color: #7ef0c0; font-weight: 600; }
-.popunder-pill.off b { color: #ff8a8a; }
-.popunder-pill.hidden {
-    opacity: 0;
-    transform: translateY(-10px);
-    pointer-events: none;
-}
-.popunder-hide {
-    border: none;
-    background: rgba(255,255,255,.08);
-    color: #cfc6e6;
-    padding: 3px 9px;
-    border-radius: 999px;
-    font-size: 11px;
-    cursor: pointer;
-    transition: background .15s ease;
-}
-.popunder-hide:hover { background: rgba(255,255,255,.18); }
-
-/* ===== Sidebar ad (300x250) ===== */
+/* ===== SIDEBAR AD (300x250) — with header bar containing ✕ ===== */
 .sidebar-ad {
     position: relative;
     margin: 8px 10px 4px;
@@ -211,14 +167,54 @@ input, textarea, select { font-family: inherit; }
     background: rgba(255,255,255,.02);
     border: 1px solid var(--border);
     overflow: hidden;
-    isolation: isolate;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 250px;
+    flex-direction: column;
     max-width: 100%;
 }
 .sidebar-ad.hidden { display: none; }
+
+/* Header bar sits ABOVE the ad iframe in normal flow — ✕ can never be covered */
+.sidebar-ad-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 6px 5px 10px;
+    background: rgba(20, 14, 34, 0.85);
+    border-bottom: 1px solid var(--border);
+    min-height: 28px;
+    z-index: 10;
+    position: relative;
+}
+.sidebar-ad-tag {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-3);
+    font-weight: 600;
+    user-select: none;
+}
+
+.sidebar-ad-close {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,.1);
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s ease, transform .15s ease;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+    z-index: 20;
+}
+.sidebar-ad-close:hover { background: rgba(239, 68, 68, 0.9); transform: scale(1.08); }
+.sidebar-ad-close:active { transform: scale(0.9); }
 
 .sidebar-ad-inner {
     width: 100%;
@@ -226,8 +222,9 @@ input, textarea, select { font-family: inherit; }
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 8px;
-    z-index: 1;
+    padding: 4px;
+    position: relative;
+    background: rgba(0,0,0,.15);
 }
 
 #sidebar-ad-slot {
@@ -236,7 +233,6 @@ input, textarea, select { font-family: inherit; }
     min-height: 250px;
     display: block;
     position: relative;
-    z-index: 1;
 }
 #sidebar-ad-slot iframe,
 #sidebar-ad-slot img,
@@ -253,38 +249,42 @@ input, textarea, select { font-family: inherit; }
     padding: 20px 12px;
 }
 
-.sidebar-ad-close {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(20, 14, 34, 0.9);
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
-    z-index: 2147483647;
-    pointer-events: auto !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background .15s ease, transform .15s ease;
-    box-shadow: 0 2px 8px rgba(0,0,0,.5);
-    -webkit-tap-highlight-color: transparent;
-    opacity: 0.7;
-}
-.sidebar-ad-close:hover { background: rgba(139,92,246,0.95); transform: scale(1.08); opacity: 1; }
-.sidebar-ad-close:active { transform: scale(0.92); }
-
 /* Composer always above any stray ad overlay */
 .composer, .composer-inner, .send-btn {
     position: relative;
     z-index: 5;
 }
+
+/* ===== Popunder pill (sidebar footer) ===== */
+.popunder-pill {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px 6px 12px;
+    margin-bottom: 6px;
+    background: rgba(20, 14, 34, .55);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text-2);
+    font-size: 12px;
+    letter-spacing: .2px;
+}
+.popunder-pill b { color: #7ef0c0; font-weight: 600; }
+.popunder-pill.off b { color: #ff8a8a; }
+.popunder-pill.hidden { display: none; }
+
+.popunder-hide {
+    border: none;
+    background: var(--surface-2);
+    color: var(--text-2);
+    padding: 3px 10px;
+    border-radius: var(--r-pill);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+}
+.popunder-hide:hover { background: var(--surface-hover); color: var(--text); }
 
 /* =========================
    Mobile topbar
@@ -623,61 +623,6 @@ input, textarea, select { font-family: inherit; }
 }
 .msg-action-btn:hover { background: var(--surface-2); color: var(--text); }
 
-.reasoning-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 10.5px;
-    color: #8a8798;
-    background: rgba(140, 140, 160, 0.08);
-    border: 1px solid rgba(140, 140, 160, 0.16);
-    border-radius: var(--r-xs);
-    padding: 2px 8px;
-    margin-bottom: 8px;
-    cursor: pointer;
-    user-select: none;
-    font-family: inherit;
-    letter-spacing: 0.2px;
-    text-transform: uppercase;
-    font-weight: 500;
-    transition: background 0.18s ease, color 0.18s ease;
-}
-.reasoning-toggle:hover {
-    background: rgba(140, 140, 160, 0.16);
-    color: #a5a2b4;
-}
-.reasoning-toggle .chev {
-    display: inline-block;
-    font-size: 9px;
-    transition: transform 0.22s ease;
-    transform-origin: center;
-}
-.reasoning-toggle.open .chev { transform: rotate(90deg); }
-
-.reasoning-panel {
-    max-height: 0;
-    opacity: 0;
-    overflow: hidden;
-    transition: max-height 0.32s ease, opacity 0.28s ease, margin 0.25s ease, padding 0.25s ease;
-    font-size: 12.5px;
-    color: #8a8798;
-    line-height: 1.55;
-    font-style: italic;
-    background: rgba(140, 140, 160, 0.05);
-    border-left: 2px solid rgba(140, 140, 160, 0.22);
-    border-radius: 6px;
-    padding: 0 12px;
-    margin-bottom: 0;
-    white-space: pre-wrap;
-    overflow-y: auto;
-}
-.reasoning-panel.open {
-    max-height: 320px;
-    opacity: 1;
-    padding: 10px 12px;
-    margin-bottom: 10px;
-}
-
 .typing-indicator {
     align-self: flex-start;
     display: flex;
@@ -820,23 +765,14 @@ input, textarea, select { font-family: inherit; }
 .modal-body::-webkit-scrollbar { width: 6px; }
 .modal-body::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 
-/* Friendly note inside disable-ads modal */
 .friendly-note {
     display: flex;
     flex-direction: column;
     gap: 12px;
     text-align: center;
 }
-.friendly-emoji {
-    font-size: 40px;
-    line-height: 1;
-    margin-bottom: 4px;
-}
-.friendly-note p {
-    font-size: 14px;
-    color: var(--text-2);
-    line-height: 1.6;
-}
+.friendly-emoji { font-size: 40px; line-height: 1; margin-bottom: 4px; }
+.friendly-note p { font-size: 14px; color: var(--text-2); line-height: 1.6; }
 .friendly-note b { color: var(--text); }
 .friendly-sub {
     font-size: 12.5px !important;
@@ -1019,11 +955,7 @@ input:checked + .slider::before { transform: translate(18px, -50%); background: 
     @media (prefers-color-scheme: light) {
         .mobile-topbar { background: rgba(255,255,255,0.85); }
     }
-    .mobile-title {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--text);
-    }
+    .mobile-title { font-size: 14px; font-weight: 600; color: var(--text); }
 
     .sidebar {
         position: fixed;
@@ -1057,9 +989,6 @@ input:checked + .slider::before { transform: translate(18px, -50%); background: 
     .modal-actions { flex-direction: column; }
     .btn { width: 100%; }
     .toast-container { right: 12px; left: 12px; bottom: 12px; max-width: none; }
-
-    /* Popunder pill smaller on mobile so it doesn't get in the way */
-    .popunder-pill { font-size: 11px; padding: 5px 8px; }
 }
 
 /* Range sliders */
