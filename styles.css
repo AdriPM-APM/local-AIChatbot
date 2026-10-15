@@ -89,6 +89,7 @@ input, textarea, select { font-family: inherit; }
     justify-content: center;
     overflow: hidden;
     z-index: 50;
+    isolation: isolate;
 }
 
 .ad-inner {
@@ -99,6 +100,21 @@ input, textarea, select { font-family: inherit; }
     justify-content: center;
     position: relative;
     padding: 4px 40px 4px 10px;
+    z-index: 1;
+}
+
+#container-a3f099d87b664187036e6176973d0255 {
+    width: 100%;
+    max-width: 100%;
+    display: block;
+    position: relative;
+    z-index: 1;
+}
+#container-a3f099d87b664187036e6176973d0255 iframe,
+#container-a3f099d87b664187036e6176973d0255 img,
+#container-a3f099d87b664187036e6176973d0255 ins {
+    max-width: 100% !important;
+    display: block;
 }
 
 .ad-label {
@@ -113,35 +129,27 @@ input, textarea, select { font-family: inherit; }
     position: absolute;
     top: 6px;
     right: 8px;
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     border: none;
-    background: rgba(255,255,255,.08);
-    color: #cfc6e6;
-    font-size: 12px;
+    background: rgba(20, 14, 34, 0.9);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
     line-height: 1;
     cursor: pointer;
-    z-index: 60;
+    z-index: 2147483647;
+    pointer-events: auto !important;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background .15s ease;
+    transition: background .15s ease, transform .15s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    -webkit-tap-highlight-color: transparent;
 }
-.ad-close:hover { background: rgba(255,255,255,.18); }
-
-/* Adsterra native banner safety */
-#container-a3f099d87b664187036e6176973d0255 {
-    width: 100%;
-    max-width: 100%;
-    display: block;
-}
-#container-a3f099d87b664187036e6176973d0255 iframe,
-#container-a3f099d87b664187036e6176973d0255 img,
-#container-a3f099d87b664187036e6176973d0255 ins {
-    max-width: 100% !important;
-    display: block;
-}
+.ad-close:hover { background: rgba(139,92,246,0.95); transform: scale(1.05); }
+.ad-close:active { transform: scale(0.95); }
 
 /* ===== Popunder pill ===== */
 .popunder-pill {
