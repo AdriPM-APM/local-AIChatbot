@@ -54,22 +54,22 @@
 
             <!-- ============ SIDEBAR AD (300x250) ============ -->
             <div id="sidebar-ad" class="sidebar-ad">
-                <!-- Header strip ALWAYS above the ad iframe, contains the ✕ -->
-                <div class="sidebar-ad-bar">
-                    <span class="sidebar-ad-tag">Sponsored</span>
-                    <button id="sidebar-ad-close" class="sidebar-ad-close" aria-label="Close ad" type="button">✕</button>
-                </div>
                 <div class="sidebar-ad-inner">
                     <div id="sidebar-ad-slot"></div>
-                    <span id="sidebar-ad-fallback" class="sidebar-ad-label">📢 Ad space</span>
+                    <span id="sidebar-ad-fallback" class="sidebar-ad-label">📢 Sponsored</span>
                 </div>
+                <!-- Absolutely positioned ✕ ON TOP of everything -->
+                <button id="sidebar-ad-close" class="sidebar-ad-close" aria-label="Close ad" type="button">✕</button>
             </div>
 
             <div class="sidebar-footer">
-                <!-- Popunder status pill -->
+                <!-- Popunder toggle (real on/off) -->
                 <div id="popunder-pill" class="popunder-pill hidden" role="status" aria-live="polite">
                     <span>Popunder: <b id="popunder-state">ON</b></span>
-                    <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder" type="button">Hide</button>
+                    <label class="mini-switch" title="Toggle popunder">
+                        <input type="checkbox" id="popunder-switch">
+                        <span class="mini-slider"></span>
+                    </label>
                 </div>
 
                 <button id="settings-btn" class="footer-btn">
