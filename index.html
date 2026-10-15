@@ -15,6 +15,9 @@
         <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
     </div>
 
+    <!-- Mobile Menu Toggle -->
+    <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Toggle Menu">☰</button>
+
     <!-- App Layout -->
     <div class="app-container">
         <!-- Sidebar -->
@@ -33,6 +36,9 @@
                 <button id="settings-btn" class="text-btn">⚙️ Settings</button>
             </div>
         </aside>
+
+        <!-- Overlay for mobile sidebar -->
+        <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
 
         <!-- Main Chat Area -->
         <main class="chat-area">
@@ -80,7 +86,11 @@
                 </div>
                 <div class="form-group">
                     <label>Model Name</label>
-                    <input type="text" id="model-input" placeholder="e.g. google/gemma-2-9b-it:free">
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="model-input" placeholder="e.g. google/gemma-2-9b-it:free" style="flex:1;">
+                        <button id="test-models-btn" class="primary-btn" style="padding: 0 12px; flex: none;">Test</button>
+                    </div>
+                    <small id="model-test-result" style="color: var(--accent); margin-top: 4px; display: none;"></small>
                 </div>
                 <div class="form-group" id="base-url-group" style="display:none;">
                     <label>Base URL (Custom)</label>
