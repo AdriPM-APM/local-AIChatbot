@@ -11,18 +11,18 @@
 <body>
     <!-- Ad Banner (Adsterra Native Banner) -->
     <div id="ad-banner" class="ad-banner" role="complementary" aria-label="Advertisement">
-        <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
         <div class="ad-inner">
-            <!-- Adsterra injects into this container -->
             <div id="container-a3f099d87b664187036e6176973d0255"></div>
             <span id="ad-fallback" class="ad-label">📢 Ad space</span>
         </div>
+        <!-- Close button OUTSIDE the ad container so Adsterra can't cover it -->
+        <button id="close-ad" class="ad-close" aria-label="Close ad banner" type="button">✕</button>
     </div>
 
     <!-- Popunder status pill -->
     <div id="popunder-pill" class="popunder-pill hidden" role="status" aria-live="polite">
         <span>Popunder: <b id="popunder-state">ON</b></span>
-        <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder">Hide</button>
+        <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder" type="button">Hide</button>
     </div>
 
     <!-- Mobile top bar -->
