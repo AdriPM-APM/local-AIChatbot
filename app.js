@@ -1,45 +1,35 @@
 /* ============================================================================
    SECTION 0 — ANTI-ADBLOCK GUARD (optimized, false-positive resistant)
    ----------------------------------------------------------------------------
-   Key improvements over the aggressive version:
-     1. Uses a REAL bait (2x2px, visible-but-tiny) instead of a 1x1 offscreen
-        element — some browsers report 0 offsetWidth for 1x1 offscreen.
-     2. Waits until Adsterra containers actually exist before checking them.
-     3. Requires 2 consecutive detections (grace period) before firing the modal.
-     4. Ignores MutationObserver triggers caused by our OWN ad network scripts.
-     5. Only fires on clear evidence — never on "element not yet present".
-     6. Modal is dismissible for a session once the user reloads via button.
-     7. Reduced polling; no more re-appending bait every 2s (that alone could
-        confuse some cosmetic filters into thinking we're an ad).
+   Key improvements:
+     1. Uses dynamic, randomized class and ID names for the bait element so 
+        static ad-blocker cosmetic filters don't blindly hide it.
+     2. Strict validation ensuring real visibility checks rather than failing 
+        on slow network responses.
+     3. Two-consecutive-hit requirement to filter out transient layout glitches.
    ============================================================================ */
 (function AntiAdBlockGuard() {
     'use strict';
 
+    // Randomized token to prevent static filter list matching
+    const RANDOM_TOKEN = Math.random().toString(36).substring(2, 9);
+
     const AdBlockGuard = {
         config: {
-            // Faster initial grace, slower steady-state
-            initialCheckDelays: [1500, 3000, 5000],
-            steadyInterval: 5000,
-            // Require N consecutive positive detections before showing the modal.
-            // Prevents 1-off timing glitches from triggering a false alarm.
+            initialCheckDelays: [2000, 4000, 6000],
+            steadyInterval: 6000,
             consecutiveHitsRequired: 2,
-            // Wait this long after load before we trust our first result.
-            warmupMs: 4000,
+            warmupMs: 5000,
 
             ids: {
-                baitGeneric: 'ad-detection-bait',
+                baitGeneric: `ad-detector-${RANDOM_TOKEN}`,
                 modalPrefix: 'anti-adblock-'
             },
             classes: {
-                // NOTE: we intentionally do NOT include "adsbygoogle" here, because
-                // Adsterra's own scripts occasionally inject elements with that
-                // class and we don't want to mistake them for our bait.
-                baitGeneric: 'advertisement ad-unit sponsored-ad adbox'
+                // Avoid standard keywords like 'advertisement' or 'adbox' that trigger false positives
+                baitGeneric: `banner-slot-${RANDOM_TOKEN} wrapper-${RANDOM_TOKEN}`
             },
             styles: {
-                // 2x2px real element, off-screen but not at -10000 (which some
-                // engines collapse to 0). pointer-events:none so it never
-                // interferes with the app.
                 bait: [
                     'position:absolute',
                     'left:-9999px',
@@ -57,9 +47,6 @@
                 ].join(' !important;') + ' !important;'
             },
 
-            // Ad containers we EXPECT to exist after Adsterra loads.
-            // Only checked AFTER warmupMs has elapsed AND the container is
-            // present in the DOM.
             watchedAdContainers: [
                 'container-a3f099d87b664187036e6176973d0255',
                 'sidebar-ad-slot'
@@ -82,32 +69,25 @@
         },
 
         start() {
-            // Wait for warmup before the very first check.
             setTimeout(() => {
                 this.state.warmupDone = true;
                 this.checkState();
             }, this.config.warmupMs);
 
-            // A few follow-up checks to catch slow ad blockers.
             this.config.initialCheckDelays.forEach(d =>
                 setTimeout(() => this.checkState(), d)
             );
 
-            // Steady-state polling.
             setInterval(() => this.checkState(), this.config.steadyInterval);
 
-            // Re-check when the tab becomes visible again.
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) this.checkState();
             });
 
-            // BFCache support.
             window.addEventListener('pageshow', (e) => {
                 if (e.persisted) this.checkState();
             });
         },
-
-        /* ---- BAIT MANAGEMENT ---- */
 
         createBait() {
             let bait = document.getElementById(this.config.ids.baitGeneric);
@@ -118,23 +98,13 @@
             bait.className = this.config.classes.baitGeneric;
             bait.setAttribute('aria-hidden', 'true');
             bait.style.cssText = this.config.styles.bait;
-            // Set the attribute BEFORE appending so measurement on the first
-            // frame is accurate.
             document.body.appendChild(bait);
             return bait;
         },
 
-        /* ---- DETECTION ---- */
-
-        /**
-         * Returns true ONLY if the bait is clearly hidden.
-         * Tolerates transient states during page paint.
-         */
         isBaitBlocked(el) {
             if (!el || !el.isConnected) return true;
 
-            // If our own inline styles were overridden (ad blocker stripped them),
-            // the element will read as tiny/invisible.
             const rect = el.getBoundingClientRect();
             if (rect.width < 1 && rect.height < 1) return true;
 
@@ -146,23 +116,13 @@
             return false;
         },
 
-        /**
-         * Watched containers are only considered "blocked" if:
-         *   - warmup is done, AND
-         *   - the container is present in the DOM, AND
-         *   - it has been populated with an iframe/img/ins by Adsterra, AND
-         *   - it is visibly hidden
-         *
-         * This avoids false positives during initial load when Adsterra hasn't
-         * injected anything yet.
-         */
         isWatchedContainerBlocked(id) {
             if (!this.state.warmupDone) return false;
             const el = document.getElementById(id);
-            if (!el) return false;                    // not yet present = not blocked
+            if (!el) return false;
 
             const hasAd = el.querySelector('iframe, img, ins');
-            if (!hasAd) return false;                 // ad hasn't loaded yet = not blocked
+            if (!hasAd) return false;
 
             const rect = el.getBoundingClientRect();
             if (rect.width < 2 || rect.height < 2) return true;
@@ -175,14 +135,10 @@
             return false;
         },
 
-        /* ---- STATE MACHINE ---- */
-
         checkState() {
-            // If the modal is already up, keep it enforced (but light-touch).
             if (this.state.warningActive) {
                 const modal = document.querySelector(`[id^='${this.config.ids.modalPrefix}']`);
                 if (!modal) {
-                    // User closed it somehow — respect that for this session.
                     this.state.warningActive = false;
                     return;
                 }
@@ -190,7 +146,6 @@
             }
 
             const bait = this.createBait();
-
             let blocked = false;
             let reason = '';
 
@@ -215,14 +170,10 @@
                     this.createWarningModal();
                 }
             } else {
-                // Reset the counter on a clean pass so a single hiccup doesn't
-                // accumulate over hours of uptime.
                 this.state.consecutiveHits = 0;
                 this.state.lastDetectionReason = '';
             }
         },
-
-        /* ---- MODAL ---- */
 
         generateUniqueId() {
             return this.config.ids.modalPrefix + Math.random().toString(36).slice(2, 11);
@@ -231,7 +182,6 @@
         createWarningModal() {
             if (this.state.warningActive) return;
 
-            // Remove any lingering instance first.
             document.querySelectorAll(`[id^='${this.config.ids.modalPrefix}']`)
                 .forEach(n => n.remove());
 
