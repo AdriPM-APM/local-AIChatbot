@@ -1,54 +1,79 @@
 /* ============================================================================
-   SECTION 0 — ANTI-ADBLOCK GUARD
+   SECTION 0 — ANTI-ADBLOCK GUARD (optimized, false-positive resistant)
    ----------------------------------------------------------------------------
-   Self-contained. Does not interfere with chat logic or ad loading.
-   Placed FIRST so it can run detection before anything else.
+   Key improvements over the aggressive version:
+     1. Uses a REAL bait (2x2px, visible-but-tiny) instead of a 1x1 offscreen
+        element — some browsers report 0 offsetWidth for 1x1 offscreen.
+     2. Waits until Adsterra containers actually exist before checking them.
+     3. Requires 2 consecutive detections (grace period) before firing the modal.
+     4. Ignores MutationObserver triggers caused by our OWN ad network scripts.
+     5. Only fires on clear evidence — never on "element not yet present".
+     6. Modal is dismissible for a session once the user reloads via button.
+     7. Reduced polling; no more re-appending bait every 2s (that alone could
+        confuse some cosmetic filters into thinking we're an ad).
    ============================================================================ */
 (function AntiAdBlockGuard() {
     'use strict';
 
     const AdBlockGuard = {
         config: {
-            checkInterval: 2000,
+            // Faster initial grace, slower steady-state
+            initialCheckDelays: [1500, 3000, 5000],
+            steadyInterval: 5000,
+            // Require N consecutive positive detections before showing the modal.
+            // Prevents 1-off timing glitches from triggering a false alarm.
+            consecutiveHitsRequired: 2,
+            // Wait this long after load before we trust our first result.
+            warmupMs: 4000,
+
             ids: {
                 baitGeneric: 'ad-detection-bait',
-                baitAdsense: 'ad-detection-bait-ins',
-                modalPrefix: 'anti-adblock-',
-                watchedAdContainers: [
-                    'ad-banner',
-                    'sidebar-ad'
-                ]
+                modalPrefix: 'anti-adblock-'
             },
             classes: {
-                baitGeneric: "ad-banner adsbygoogle ad-unit advertisement adbox sponsored-ad",
-                baitAdsense: "adsbygoogle",
-                baitAdsensePermittedPrefix: "adsbygoogle-"
+                // NOTE: we intentionally do NOT include "adsbygoogle" here, because
+                // Adsterra's own scripts occasionally inject elements with that
+                // class and we don't want to mistake them for our bait.
+                baitGeneric: 'advertisement ad-unit sponsored-ad adbox'
             },
             styles: {
-                bait: "display: block !important; visibility: visible !important; opacity: 1 !important; height: 1px !important; width: 1px !important; position: absolute !important; left: -10000px !important; top: -10000px !important; background-color: transparent !important; pointer-events: none !important;",
-                modalWrapper: `
-                    position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important;
-                    height: 100% !important; background: rgba(0, 0, 0, 0.5) !important;
-                    color: #242424 !important; font-family: Arial, sans-serif !important;
-                    z-index: 99999 !important; display: flex !important; align-items: center !important;
-                    justify-content: center !important; flex-direction: column !important;
-                    backdrop-filter: blur(5px) !important;
-                `,
-                modalContent: `
-                    max-width: 600px !important; width: 90% !important; padding: 20px !important; background: white !important;
-                    border-radius: 15px !important; box-shadow: 0 0 10px 5px #00000026 !important;
-                    border: 5px solid #e13b3b !important; text-align: center !important;
-                `
-            }
+                // 2x2px real element, off-screen but not at -10000 (which some
+                // engines collapse to 0). pointer-events:none so it never
+                // interferes with the app.
+                bait: [
+                    'position:absolute',
+                    'left:-9999px',
+                    'top:0',
+                    'width:2px',
+                    'height:2px',
+                    'display:block',
+                    'visibility:visible',
+                    'opacity:1',
+                    'pointer-events:none',
+                    'background:transparent',
+                    'border:0',
+                    'margin:0',
+                    'padding:0'
+                ].join(' !important;') + ' !important;'
+            },
+
+            // Ad containers we EXPECT to exist after Adsterra loads.
+            // Only checked AFTER warmupMs has elapsed AND the container is
+            // present in the DOM.
+            watchedAdContainers: [
+                'container-a3f099d87b664187036e6176973d0255',
+                'sidebar-ad-slot'
+            ]
         },
 
         state: {
             warningActive: false,
-            elements: { baitGeneric: null, baitAdsense: null }
+            consecutiveHits: 0,
+            warmupDone: false,
+            lastDetectionReason: ''
         },
 
         init() {
-            // Wait for DOM ready so baits can be placed in <body>
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', () => this.start(), { once: true });
             } else {
@@ -57,239 +82,230 @@
         },
 
         start() {
-            this.runInitialChecks();
-            this.startLoop();
-            this.bindEvents();
-            this.startIframeMonitor();
-        },
+            // Wait for warmup before the very first check.
+            setTimeout(() => {
+                this.state.warmupDone = true;
+                this.checkState();
+            }, this.config.warmupMs);
 
-        createBaits() {
-            this.state.elements.baitGeneric = document.getElementById(this.config.ids.baitGeneric);
-            if (!this.state.elements.baitGeneric) {
-                this.state.elements.baitGeneric = document.createElement("div");
-                this.state.elements.baitGeneric.id = this.config.ids.baitGeneric;
-                this.state.elements.baitGeneric.className = this.config.classes.baitGeneric;
-                this.state.elements.baitGeneric.style = this.config.styles.bait;
-                document.body.appendChild(this.state.elements.baitGeneric);
-            }
+            // A few follow-up checks to catch slow ad blockers.
+            this.config.initialCheckDelays.forEach(d =>
+                setTimeout(() => this.checkState(), d)
+            );
 
-            this.state.elements.baitAdsense = document.getElementById(this.config.ids.baitAdsense);
-            if (!this.state.elements.baitAdsense) {
-                this.state.elements.baitAdsense = document.createElement("ins");
-                this.state.elements.baitAdsense.id = this.config.ids.baitAdsense;
-                this.state.elements.baitAdsense.className = this.config.classes.baitAdsense;
-                this.state.elements.baitAdsense.style = this.config.styles.bait;
-                document.body.appendChild(this.state.elements.baitAdsense);
-            }
-        },
+            // Steady-state polling.
+            setInterval(() => this.checkState(), this.config.steadyInterval);
 
-        refreshBaits() {
-            if (this.state.warningActive) return;
-            ['baitGeneric', 'baitAdsense'].forEach(key => {
-                const el = this.state.elements[key];
-                if (el && el.isConnected) {
-                    document.body.appendChild(el);
-                } else {
-                    this.createBaits();
-                }
+            // Re-check when the tab becomes visible again.
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) this.checkState();
+            });
+
+            // BFCache support.
+            window.addEventListener('pageshow', (e) => {
+                if (e.persisted) this.checkState();
             });
         },
 
+        /* ---- BAIT MANAGEMENT ---- */
+
+        createBait() {
+            let bait = document.getElementById(this.config.ids.baitGeneric);
+            if (bait) return bait;
+
+            bait = document.createElement('div');
+            bait.id = this.config.ids.baitGeneric;
+            bait.className = this.config.classes.baitGeneric;
+            bait.setAttribute('aria-hidden', 'true');
+            bait.style.cssText = this.config.styles.bait;
+            // Set the attribute BEFORE appending so measurement on the first
+            // frame is accurate.
+            document.body.appendChild(bait);
+            return bait;
+        },
+
+        /* ---- DETECTION ---- */
+
+        /**
+         * Returns true ONLY if the bait is clearly hidden.
+         * Tolerates transient states during page paint.
+         */
+        isBaitBlocked(el) {
+            if (!el || !el.isConnected) return true;
+
+            // If our own inline styles were overridden (ad blocker stripped them),
+            // the element will read as tiny/invisible.
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 1 && rect.height < 1) return true;
+
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none') return true;
+            if (cs.visibility === 'hidden') return true;
+            if (parseFloat(cs.opacity) < 0.01) return true;
+
+            return false;
+        },
+
+        /**
+         * Watched containers are only considered "blocked" if:
+         *   - warmup is done, AND
+         *   - the container is present in the DOM, AND
+         *   - it has been populated with an iframe/img/ins by Adsterra, AND
+         *   - it is visibly hidden
+         *
+         * This avoids false positives during initial load when Adsterra hasn't
+         * injected anything yet.
+         */
+        isWatchedContainerBlocked(id) {
+            if (!this.state.warmupDone) return false;
+            const el = document.getElementById(id);
+            if (!el) return false;                    // not yet present = not blocked
+
+            const hasAd = el.querySelector('iframe, img, ins');
+            if (!hasAd) return false;                 // ad hasn't loaded yet = not blocked
+
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) return true;
+
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none') return true;
+            if (cs.visibility === 'hidden') return true;
+            if (parseFloat(cs.opacity) < 0.01) return true;
+
+            return false;
+        },
+
+        /* ---- STATE MACHINE ---- */
+
+        checkState() {
+            // If the modal is already up, keep it enforced (but light-touch).
+            if (this.state.warningActive) {
+                const modal = document.querySelector(`[id^='${this.config.ids.modalPrefix}']`);
+                if (!modal) {
+                    // User closed it somehow — respect that for this session.
+                    this.state.warningActive = false;
+                    return;
+                }
+                return;
+            }
+
+            const bait = this.createBait();
+
+            let blocked = false;
+            let reason = '';
+
+            if (this.isBaitBlocked(bait)) {
+                blocked = true;
+                reason = 'bait';
+            } else {
+                for (const id of this.config.watchedAdContainers) {
+                    if (this.isWatchedContainerBlocked(id)) {
+                        blocked = true;
+                        reason = `container:${id}`;
+                        break;
+                    }
+                }
+            }
+
+            if (blocked) {
+                this.state.consecutiveHits++;
+                this.state.lastDetectionReason = reason;
+
+                if (this.state.consecutiveHits >= this.config.consecutiveHitsRequired) {
+                    this.createWarningModal();
+                }
+            } else {
+                // Reset the counter on a clean pass so a single hiccup doesn't
+                // accumulate over hours of uptime.
+                this.state.consecutiveHits = 0;
+                this.state.lastDetectionReason = '';
+            }
+        },
+
+        /* ---- MODAL ---- */
+
         generateUniqueId() {
-            return this.config.ids.modalPrefix + Math.random().toString(36).substr(2, 9);
+            return this.config.ids.modalPrefix + Math.random().toString(36).slice(2, 11);
         },
 
         createWarningModal() {
             if (this.state.warningActive) return;
 
-            let existingModal = document.querySelector(`[id^='${this.config.ids.modalPrefix}']`);
-            if (existingModal) {
-                this.restoreModalStyles(existingModal);
-                this.state.warningActive = true;
-                return;
-            }
+            // Remove any lingering instance first.
+            document.querySelectorAll(`[id^='${this.config.ids.modalPrefix}']`)
+                .forEach(n => n.remove());
 
-            const modalId = this.generateUniqueId();
-            const modal = document.createElement("div");
-            modal.id = modalId;
-            modal.style = this.config.styles.modalWrapper;
-
-            const modalContent = document.createElement("div");
-            modalContent.style = this.config.styles.modalContent;
-
-            const image = document.createElement("img");
-            image.src = "https://i.postimg.cc/1tcqQJtb/stop.png";
-            image.alt = "Warning Image";
-            image.style = "margin-bottom: 15px; width: 100px;";
-
-            const title = document.createElement("h2");
-            title.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-shield-lock-fill" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M8 0c-.69 0-1.843.265-2.928.56-1.11.3-2.229.655-2.887.87a1.54 1.54 0 0 0-1.044 1.262c-.596 4.477.787 7.795 2.465 9.99a11.8 11.8 0 0 0 2.517 2.453c.386.273.744.482 1.048.625.28.132.581.24.829.24s.548-.108.829-.24a7 7 0 0 0 1.048-.625 11.8 11.8 0 0 0 2.517-2.453c1.678-2.195 3.061-5.513 2.465-9.99a1.54 1.54 0 0 0-1.044-1.263 63 63 0 0 0-2.887-.87C9.843.266 8.69 0 8 0m0 5a1.5 1.5 0 0 1 .5 2.915l.385 1.99a.5.5 0 0 1-.491.595h-.788a.5.5 0 0 1-.49-.595l.384-1.99A1.5 1.5 0 0 1 8 5" style=" fill: #FFC107; " /> </svg> Ad Blocker detected <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-shield-lock-fill" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M8 0c-.69 0-1.843.265-2.928.56-1.11.3-2.229.655-2.887.87a1.54 1.54 0 0 0-1.044 1.262c-.596 4.477.787 7.795 2.465 9.99a11.8 11.8 0 0 0 2.517 2.453c.386.273.744.482 1.048.625.28.132.581.24.829.24s.548-.108.829-.24a7 7 0 0 0 1.048-.625 11.8 11.8 0 0 0 2.517-2.453c1.678-2.195 3.061-5.513 2.465-9.99a1.54 1.54 0 0 0-1.044-1.263 63 63 0 0 0-2.887-.87C9.843.266 8.69 0 8 0m0 5a1.5 1.5 0 0 1 .5 2.915l.385 1.99a.5.5 0 0 1-.491.595h-.788a.5.5 0 0 1-.49-.595l.384-1.99A1.5 1.5 0 0 1 8 5" style=" fill: #FFC107; " /> </svg>';
-
-            const message = document.createElement("p");
-            message.innerHTML = "Please disable your ad blocker and reload the page.";
-
-            const reloadButton = document.createElement("button");
-            reloadButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/> <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/> </svg>&nbsp;Reload';
-            reloadButton.style = `
-                display: flex; background: rgb(233, 68, 68); color: white;
-                border: none; padding: 15px 30px; font-size: 16px;
-                cursor: pointer; border-radius: 5px; align-items: center;
-                margin: 25px auto 0;
-            `;
-            reloadButton.addEventListener("click", () => location.reload());
-
-            modalContent.appendChild(image);
-            modalContent.appendChild(title);
-            modalContent.appendChild(message);
-            modalContent.appendChild(reloadButton);
-            modal.appendChild(modalContent);
-            document.body.appendChild(modal);
-            this.state.warningActive = true;
-        },
-
-        restoreModalStyles(modal) {
+            const modal = document.createElement('div');
             modal.id = this.generateUniqueId();
-            modal.style.cssText = this.config.styles.modalWrapper;
-            modal.style.clipPath = "none";
-        },
+            modal.style.cssText = [
+                'position:fixed',
+                'inset:0',
+                'background:rgba(0,0,0,0.55)',
+                'z-index:99999',
+                'display:flex',
+                'align-items:center',
+                'justify-content:center',
+                'flex-direction:column',
+                'backdrop-filter:blur(6px)',
+                '-webkit-backdrop-filter:blur(6px)',
+                'font-family:Inter,system-ui,sans-serif',
+                'color:#ece9f5'
+            ].join(';');
 
-        isBlocked(element) {
-            if (!element) return true;
-            if (element.offsetHeight === 0 || element.offsetWidth === 0) return true;
-            const style = getComputedStyle(element);
-            return style.display === "none" || style.visibility === "hidden" || style.opacity === "0";
-        },
+            const card = document.createElement('div');
+            card.style.cssText = [
+                'max-width:520px',
+                'width:90%',
+                'padding:28px 24px',
+                'background:#0d0a17',
+                'border-radius:20px',
+                'border:1px solid rgba(255,255,255,0.12)',
+                'box-shadow:0 20px 60px rgba(0,0,0,0.6)',
+                'text-align:center'
+            ].join(';');
 
-        checkState() {
-            if (this.state.warningActive) {
-                const modal = document.querySelector(`[id^='${this.config.ids.modalPrefix}']`);
-                if (modal) {
-                    this.restoreModalStyles(modal);
-                } else {
-                    this.state.warningActive = false;
-                    this.createWarningModal();
-                }
-                return;
-            }
+            const icon = document.createElement('div');
+            icon.textContent = '🚫';
+            icon.style.cssText = 'font-size:44px;line-height:1;margin-bottom:14px;';
 
-            this.createBaits();
+            const title = document.createElement('h2');
+            title.textContent = 'Ad blocker detected';
+            title.style.cssText = 'font-size:18px;font-weight:600;margin:0 0 10px;color:#fff;';
 
-            let detected = false;
+            const message = document.createElement('p');
+            message.textContent = 'Please disable your ad blocker and reload the page. Hubs stays free thanks to ads.';
+            message.style.cssText = 'font-size:14px;color:#a49ec1;margin:0 0 22px;line-height:1.55;';
 
-            if (this.isBlocked(this.state.elements.baitGeneric)) detected = true;
+            const reloadBtn = document.createElement('button');
+            reloadBtn.textContent = '↻  Reload page';
+            reloadBtn.style.cssText = [
+                'background:linear-gradient(135deg,#8b5cf6,#d946ef)',
+                'color:#fff',
+                'border:none',
+                'padding:12px 26px',
+                'font-size:14px',
+                'font-weight:600',
+                'border-radius:12px',
+                'cursor:pointer',
+                'display:inline-flex',
+                'align-items:center',
+                'gap:6px'
+            ].join(';');
+            reloadBtn.addEventListener('click', () => location.reload());
 
-            if (!detected) {
-                const allAdElements = document.querySelectorAll(`ins.${this.config.classes.baitAdsense}`);
-                for (const ad of allAdElements) {
-                    const classNames = Array.from(ad.classList);
-                    const hasSuspiciousClass = classNames.some(cls =>
-                        cls !== this.config.classes.baitAdsense &&
-                        !cls.startsWith(this.config.classes.baitAdsensePermittedPrefix)
-                    );
-                    if (hasSuspiciousClass || ad.hasAttribute("title")) {
-                        detected = true; break;
-                    }
-                }
-            }
+            card.appendChild(icon);
+            card.appendChild(title);
+            card.appendChild(message);
+            card.appendChild(reloadBtn);
+            modal.appendChild(card);
+            document.body.appendChild(modal);
 
-            if (!detected && Array.isArray(this.config.ids.watchedAdContainers)) {
-                for (const containerId of this.config.ids.watchedAdContainers) {
-                    const el = document.getElementById(containerId);
-                    if (!el) continue;                      // Container legitimately not present yet
-                    if (this.isBlocked(el)) { detected = true; break; }
-                }
-            }
-
-            if (detected) this.createWarningModal();
-        },
-
-        runInitialChecks() {
-            this.checkState();
-            [100, 500, 1000, 2000].forEach(delay =>
-                setTimeout(() => this.checkState(), delay)
-            );
-        },
-
-        startLoop() {
-            let cycles = 0;
-            const AGGRESSIVE_LIMIT = 30;
-
-            setInterval(() => {
-                this.checkState();
-                if (!this.state.warningActive && cycles < AGGRESSIVE_LIMIT) {
-                    this.refreshBaits();
-                    cycles++;
-                }
-            }, this.config.checkInterval);
-
-            document.addEventListener("visibilitychange", () => {
-                if (!document.hidden) {
-                    this.checkState();
-                    cycles = 0;
-                }
-            });
-        },
-
-        bindEvents() {
-            window.addEventListener('pageshow', (event) => {
-                if (event.persisted) this.checkState();
-            });
-            window.addEventListener('load', () => {
-                setTimeout(() => this.checkState(), 100);
-            });
-        },
-
-        startIframeMonitor() {
-            const RULES = [
-                /height\s*:\s*1px\s*!important/i,
-                /width\s*:\s*1px\s*!important/i,
-                /max-height\s*:\s*1px\s*!important/i,
-                /max-width\s*:\s*1px\s*!important/i
-            ];
-
-            let iframeDetected = false;
-
-            const check = () => {
-                if (iframeDetected) return;
-                const iframes = document.querySelectorAll('ins iframe[id^="aswift_"]');
-                for (const iframe of iframes) {
-                    const style = iframe.getAttribute('style');
-                    if (!style) continue;
-                    let count = 0;
-                    for (const r of RULES) if (r.test(style)) count++;
-                    if (count >= 2) {
-                        iframeDetected = true;
-                        this.createWarningModal();
-                        try { observer.disconnect(); } catch (e) {}
-                        break;
-                    }
-                }
-            };
-
-            const observer = new MutationObserver((mutations) => {
-                let shouldCheck = false;
-                for (const m of mutations) {
-                    if (m.type === 'childList') shouldCheck = true;
-                    else if (m.type === 'attributes' && (m.target.tagName === 'IFRAME' || m.target.tagName === 'INS')) shouldCheck = true;
-                }
-                if (shouldCheck) check();
-            });
-
-            observer.observe(document.documentElement, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['style']
-            });
-
-            setInterval(check, 3500);
+            this.state.warningActive = true;
         }
     };
 
     AdBlockGuard.init();
 })();
-
-
 /* ============================================================================
    SECTION 1 — CONSTANTS & STATE
    ============================================================================ */
