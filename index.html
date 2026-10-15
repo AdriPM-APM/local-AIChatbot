@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Local AI Chatbot - Polybuzz Style</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Header -->
+        <header class="app-header">
+            <div class="search-bar">
+                <i class="fa-solid fa-search"></i>
+                <input type="text" id="searchInput" placeholder="Buscar personajes, chats...">
+            </div>
+            <div class="header-actions">
+                <i class="fa-solid fa-bell"></i>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="app-main">
+            <!-- Home / Chat List View -->
+            <div id="homeView" class="view active">
+                <div class="chat-list" id="chatList"></div>
+            </div>
+
+            <!-- Chat Room View -->
+            <div id="chatView" class="view" style="display: none;">
+                <div class="chat-room-header">
+                    <button id="backBtn" class="icon-btn"><i class="fa-solid fa-arrow-left"></i></button>
+                    <div class="chat-contact-info">
+                        <img id="currentAvatar" src="" alt="Avatar" class="avatar-sm">
+                        <div>
+                            <h3 id="currentName">Nombre del Personaje</h3>
+                            <span class="status-indicator">En línea</span>
+                        </div>
+                    </div>
+                    <button class="icon-btn"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                </div>
+
+                <!-- Closed Ad Banner Component Example -->
+                <div id="adContainer" class="closed-ad-banner">
+                    <!-- PROPRIETARY CLOSED AD CODE START -->
+                    <div class="ad-placeholder">
+                        <span class="ad-tag">AD [CÓDIGO CERRADO]</span>
+                        <p>Banner Publicitario de Prueba (Protegido)</p>
+                    </div>
+                    <!-- PROPRIETARY CLOSED AD CODE END -->
+                </div>
+
+                <div class="chat-messages" id="chatMessages"></div>
+
+                <div class="chat-input-area">
+                    <input type="text" id="messageInput" placeholder="Escribe un mensaje...">
+                    <button id="sendBtn" class="send-btn"><i class="fa-solid fa-paper-plane"></i></button>
+                </div>
+            </div>
+
+            <!-- Explore View -->
+            <div id="exploreView" class="view" style="display: none;">
+                <div class="explore-content">
+                    <h2>Explorar Tendencias</h2>
+                </div>
+            </div>
+
+            <!-- Profile View -->
+            <div id="profileView" class="view" style="display: none;">
+                <div class="profile-content">
+                    <div class="profile-avatar-large">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <h2>Usuario Local</h2>
+                    <p class="subtext">Configuración de cuenta y preferencias</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- Bottom Navigation Bar -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-target="homeView">
+                <i class="fa-solid fa-house"></i>
+                <span>Inicio</span>
+            </button>
+            <button class="nav-item" data-target="chatListTab">
+                <i class="fa-solid fa-comments"></i>
+                <span>Chats</span>
+                <span class="badge">17</span>
+            </button>
+            <button class="nav-item plus-btn" data-target="createView">
+                <div class="plus-circle">
+                    <i class="fa-solid fa-plus"></i>
+                </div>
+            </button>
+            <button class="nav-item" data-target="exploreView">
+                <i class="fa-solid fa-compass"></i>
+                <span>Explorar</span>
+            </button>
+            <button class="nav-item" data-target="profileView">
+                <i class="fa-solid fa-user"></i>
+                <span>Perfil</span>
+            </button>
+        </nav>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
