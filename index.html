@@ -9,17 +9,16 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Ad Banner (Adsterra Native Banner) -->
+    <!-- ============ TOP AD BANNER (less intrusive, easy to close) ============ -->
     <div id="ad-banner" class="ad-banner" role="complementary" aria-label="Advertisement">
         <div class="ad-inner">
             <div id="container-a3f099d87b664187036e6176973d0255"></div>
-            <span id="ad-fallback" class="ad-label">📢 Ad space</span>
+            <span id="ad-fallback" class="ad-label">📢 Sponsored</span>
         </div>
-        <!-- Close button OUTSIDE the ad container so Adsterra can't cover it -->
-        <button id="close-ad" class="ad-close" aria-label="Close ad banner" type="button">✕</button>
+        <button id="close-ad" class="ad-close" aria-label="Close ad" type="button">✕</button>
     </div>
 
-    <!-- Popunder status pill -->
+    <!-- Popunder status pill — top-left, never blocks composer -->
     <div id="popunder-pill" class="popunder-pill hidden" role="status" aria-live="polite">
         <span>Popunder: <b id="popunder-state">ON</b></span>
         <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder" type="button">Hide</button>
@@ -58,6 +57,15 @@
             </div>
 
             <div id="character-list" class="character-list"></div>
+
+            <!-- ============ SIDEBAR AD (300x250) — always for money ============ -->
+            <div id="sidebar-ad" class="sidebar-ad">
+                <button id="sidebar-ad-close" class="sidebar-ad-close" aria-label="Close ad" type="button">✕</button>
+                <div class="sidebar-ad-inner">
+                    <div id="sidebar-ad-slot"></div>
+                    <span id="sidebar-ad-fallback" class="sidebar-ad-label">📢 Sponsored</span>
+                </div>
+            </div>
 
             <div class="sidebar-footer">
                 <button id="settings-btn" class="footer-btn">
@@ -99,6 +107,32 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- ============ DISABLE ADS CONFIRM MODAL (friendly) ============ -->
+    <div id="disable-ads-modal" class="modal-overlay hidden">
+        <div class="modal modal-small">
+            <div class="modal-head">
+                <h2>Turn off this ad?</h2>
+                <button class="icon-btn ghost close-modal-btn" data-modal="disable-ads-modal" aria-label="Close">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="friendly-note">
+                    <div class="friendly-emoji">💜</div>
+                    <p>
+                        Hey — this top banner is what keeps <b>Hubs</b> free for you.
+                        It's a bit intrusive, we know. You can turn it off for a cleaner chat.
+                    </p>
+                    <p class="friendly-sub">
+                        Popunder &amp; sidebar ads will stay on either way — they're what actually pay the bills.
+                    </p>
+                </div>
+                <div class="modal-actions">
+                    <button id="confirm-disable-ads" class="btn danger">Yes, disable this ad</button>
+                    <button id="keep-ads" class="btn primary">No, keep it</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Settings Modal -->
@@ -170,9 +204,9 @@
                     <input type="text" id="base-url-input" placeholder="https://api.example.com/v1">
                 </div>
 
-                <!-- ===== ADS SETTINGS ===== -->
+                <!-- ADS SETTINGS -->
                 <div class="field row-between">
-                    <label>Show banner ad</label>
+                    <label>Show top banner ad</label>
                     <label class="switch">
                         <input type="checkbox" id="show-ads-toggle" checked>
                         <span class="slider"></span>
@@ -185,7 +219,7 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <small style="margin-top:-8px;color:var(--text-3);">Both ads auto re-enable on every page load.</small>
+                <small style="margin-top:-8px;color:var(--text-3);">Popunder auto re-enables each session. Sidebar ad is always on.</small>
 
                 <div class="modal-actions">
                     <button id="save-settings-btn" class="btn primary">Save</button>
