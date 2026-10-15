@@ -1,11 +1,28 @@
 Copyright (c) 2026 AdriPM-APM. All rights reserved.
 
-This software and its documentation are proprietary and confidential.
+PROPRIETARY AND CONFIDENTIAL SOFTWARE
 
-No permission is granted to copy, modify, distribute, publish, sublicense, 
-sell, or reverse engineer any part of this software without prior written 
-permission from the copyright owner.
+This repository and all associated files, source code, documentation, and materials 
+(collectively, the "Software") are the exclusive property of AdriPM-APM.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+1. PROHIBITION OF USE, MODIFICATION, AND COPYING:
+Strictly NO permission, license, or right is granted to any person or entity to copy, 
+reproduce, modify, merge, publish, distribute, sublicense, translate, sell, host, 
+or create derivative works from this Software, in whole or in part, under any 
+circumstances, for commercial or non-commercial purposes.
+
+2. PROHIBITION OF SCRAPING AND AI TRAINING:
+You are explicitly forbidden from using any portion of this Software for data mining, 
+automated extraction, data scraping, or as training data for machine learning algorithms, 
+artificial intelligence models, or large language models (LLMs).
+
+3. NO IMPLIED RIGHTS:
+Viewing or accessing this Software on GitHub or any other platform does not constitute 
+a grant of any rights or license under copyright, patent, trademark, or any other 
+intellectual property law.
+
+4. DISCLAIMER OF WARRANTY:
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR 
+PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT OWNER BE LIABLE FOR ANY 
+CLAIM, DAMAGES, OR OTHER LIABILITY.
