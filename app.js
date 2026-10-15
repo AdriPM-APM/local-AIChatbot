@@ -7,7 +7,7 @@ let appData = {
     aiSettings: {
         provider: 'gemini',
         apiKey: '',
-        model: 'gemini-3.8-flash',
+        model: 'gemini-3.1-flash-lite',
         baseUrl: '',
         temperature: 0.7,
         topP: 0.95,
@@ -26,45 +26,49 @@ let appData = {
 let currentCharacterId = null;
 let isGenerating = false;
 
+// Ordered to prioritize lighter, older, and high-efficiency models first
 const TEST_MODELS = {
     openrouter: [
         'google/gemma-2-9b-it:free',
-        'google/gemma-4-26b-a4b-it:free',
         'meta-llama/llama-3.1-8b-instruct:free',
         'mistralai/mistral-7b-instruct:free',
+        'google/gemma-4-26b-a4b-it:free',
         'deepseek/deepseek-r1:free'
     ],
     gemini: [
-        'gemini-3.8-flash',
-        'gemini-3.6-flash',
-        'gemini-3.5-flash-lite',
         'gemini-3.1-flash-lite',
-        'gemma-4-31b-it',
-        'gemma-4-26b-a4b-it',
+        'gemini-3.4-flash-lite',
+        'gemini-3.5-flash-lite',
+        'gemini-3.6-flash',
+        'gemini-3.8-flash',
+        'gemma-2-9b-it',
         'gemma-2-27b-it',
-        'gemma-2-9b-it'
+        'gemma-4-26b-a4b-it',
+        'gemma-4-31b-it'
     ],
     openai: [
         'gpt-4o-mini',
+        'gpt-3.5-turbo',
         'gpt-4o',
         'o1-mini',
         'o3-mini'
     ],
     anthropic: [
-        'claude-3-5-sonnet-latest',
+        'claude-3-haiku-20240307',
         'claude-3-5-haiku-latest',
+        'claude-3-5-sonnet-latest',
         'claude-3-7-sonnet-latest'
     ],
     groq: [
         'llama-3.1-8b-instant',
-        'llama-3.3-70b-versatile',
-        'mixtral-8x7b-32768'
+        'mixtral-8x7b-32768',
+        'llama-3.3-70b-versatile'
     ],
     ollama: [
-        'llama3.3',
+        'gemma2',
         'llama3.2',
         'mistral',
-        'gemma2',
+        'llama3.3',
         'deepseek-r1'
     ],
     custom: [
@@ -186,9 +190,9 @@ function cleanAIResponse(raw, characterName) {
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
     const headerLines = [
-        /^\s*\*\s*format\s*:.*\$/gim,
-        /^\s*\*\s*user\s+asks?\s*:.*\$/gim,
-        /^\s*\*\s*character\s*:.*\$/gim,
+        /^\s*\*\s*format\s*:.*$/gim,
+        /^\s*\*\s*user\s+asks?\s*:.*$/gim,
+        /^\s*\*\s*character\s*:.*$/gim,
         /^\s*\*\s*input\s+context\s*:.*\$/gim,
         /^\s*\*\s*internal\s+state\s*:.*\$/gim,
         /^\s*\*\s*motivation\s*:.*\$/gim,
@@ -421,7 +425,7 @@ function updateSettingsUI() {
 
 function saveSettings() {
     const provider = document.getElementById('provider-select')?.value || 'gemini';
-    const model = document.getElementById('model-select')?.value || 'gemini-3.8-flash';
+    const model = document.getElementById('model-select')?.value || 'gemini-3.1-flash-lite';
     const apiKey = document.getElementById('api-key-input')?.value.trim() || '';
     const fallbackKey = document.getElementById('openrouter-fallback-key-input')?.value.trim() || '';
     const baseUrl = document.getElementById('base-url-input')?.value.trim() || '';
@@ -473,7 +477,7 @@ async function testAndAutoSelectModel() {
 
     for (const model of models) {
         try {
-            // Write the model directly into the model input/dropdown box in real-time as it tests
+            // Write directly into the model input/dropdown box in real-time as it tests
             if (modelEl) {
                 if (modelEl.tagName === 'SELECT') {
                     if (!Array.from(modelEl.options).some(o => o.value === model)) {
@@ -484,6 +488,8 @@ async function testAndAutoSelectModel() {
                     }
                 }
                 modelEl.value = model;
+                modelEl.dispatchEvent(new Event('input', { bubbles: true }));
+                modelEl.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             const success = await pingModel(provider, model, apiKey, baseUrl);
@@ -493,7 +499,13 @@ async function testAndAutoSelectModel() {
                 appData.aiSettings.model = model;
                 saveData();
                 updateSettingsUI();
-                showToast(`Success! Auto-selected working model: ${model}`, 'success');
+                
+                // Force model box to hold the successful model value
+                if (modelEl) {
+                    modelEl.value = model;
+                }
+
+                showToast(`Success! Auto-selected lightweight model: ${model}`, 'success');
                 return;
             }
         } catch (err) {
