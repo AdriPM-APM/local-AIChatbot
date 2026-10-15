@@ -26,7 +26,7 @@ let appData = {
 let currentCharacterId = null;
 let isGenerating = false;
 
-// Ordered to prioritize lighter, older, and high-efficiency models first
+// Prioritizes lighter, older, and high-efficiency models first
 const TEST_MODELS = {
     openrouter: [
         'google/gemma-2-9b-it:free',
@@ -190,9 +190,9 @@ function cleanAIResponse(raw, characterName) {
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
     const headerLines = [
-        /^\s*\*\s*format\s*:.*$/gim,
-        /^\s*\*\s*user\s+asks?\s*:.*$/gim,
-        /^\s*\*\s*character\s*:.*$/gim,
+        /^\s*\*\s*format\s*:.*\$/gim,
+        /^\s*\*\s*user\s+asks?\s*:.*\$/gim,
+        /^\s*\*\s*character\s*:.*\$/gim,
         /^\s*\*\s*input\s+context\s*:.*\$/gim,
         /^\s*\*\s*internal\s+state\s*:.*\$/gim,
         /^\s*\*\s*motivation\s*:.*\$/gim,
@@ -299,7 +299,7 @@ function setupEventListeners() {
 
     document.getElementById('provider-select')?.addEventListener('change', (e) => {
         document.getElementById('base-url-group').style.display = e.target.value === 'custom' ? 'flex' : 'none';
-        updateModelDropdown(e.target.value);
+        updateModelInput(e.target.value);
     });
     document.getElementById('save-settings-btn')?.addEventListener('click', saveSettings);
     document.getElementById('clear-data-btn')?.addEventListener('click', clearAllData);
@@ -363,31 +363,10 @@ function escapeHtml(s) {
     }[c]));
 }
 
-function updateModelDropdown(provider) {
-    const modelEl = document.getElementById('model-select');
-    if (!modelEl) return;
-
-    const models = TEST_MODELS[provider] || TEST_MODELS.gemini;
-    const currentModel = appData.aiSettings.model;
-
-    if (modelEl.tagName === 'SELECT') {
-        modelEl.innerHTML = '';
-        let availableModels = [...models];
-        if (currentModel && !availableModels.includes(currentModel)) {
-            availableModels.unshift(currentModel);
-        }
-
-        availableModels.forEach(m => {
-            const opt = document.createElement('option');
-            opt.value = m;
-            opt.textContent = m;
-            modelEl.appendChild(opt);
-        });
-
-        modelEl.value = currentModel;
-    } else {
-        modelEl.value = currentModel;
-    }
+function updateModelInput(provider) {
+    const modelInput = document.getElementById('model-input') || document.getElementById('model-select');
+    if (!modelInput) return;
+    modelInput.value = appData.aiSettings.model || '';
 }
 
 function updateSettingsUI() {
@@ -395,7 +374,7 @@ function updateSettingsUI() {
     const providerSelect = document.getElementById('provider-select');
     if (providerSelect) providerSelect.value = settings.provider;
 
-    updateModelDropdown(settings.provider);
+    updateModelInput(settings.provider);
 
     const apiKeyInput = document.getElementById('api-key-input');
     if (apiKeyInput) apiKeyInput.value = settings.apiKey || '';
@@ -425,7 +404,8 @@ function updateSettingsUI() {
 
 function saveSettings() {
     const provider = document.getElementById('provider-select')?.value || 'gemini';
-    const model = document.getElementById('model-select')?.value || 'gemini-3.1-flash-lite';
+    const modelInput = document.getElementById('model-input') || document.getElementById('model-select');
+    const model = modelInput?.value.trim() || 'gemini-3.1-flash-lite';
     const apiKey = document.getElementById('api-key-input')?.value.trim() || '';
     const fallbackKey = document.getElementById('openrouter-fallback-key-input')?.value.trim() || '';
     const baseUrl = document.getElementById('base-url-input')?.value.trim() || '';
@@ -456,14 +436,14 @@ function clearAllData() {
 }
 
 // ==========================================
-// 10. Automated Model Pinging & Direct Writing to Model Input
+// 10. Automated Model Pinging & Direct Writing to model-input
 // ==========================================
 async function testAndAutoSelectModel() {
     const provider = document.getElementById('provider-select')?.value || appData.aiSettings.provider;
     const apiKey = document.getElementById('api-key-input')?.value.trim() || appData.aiSettings.apiKey;
     const baseUrl = document.getElementById('base-url-input')?.value.trim() || appData.aiSettings.baseUrl;
     const models = TEST_MODELS[provider];
-    const modelEl = document.getElementById('model-select');
+    const modelInput = document.getElementById('model-input') || document.getElementById('model-select');
 
     if (!models || models.length === 0) {
         showToast('No test models available for this provider.', 'error');
@@ -477,19 +457,11 @@ async function testAndAutoSelectModel() {
 
     for (const model of models) {
         try {
-            // Write directly into the model input/dropdown box in real-time as it tests
-            if (modelEl) {
-                if (modelEl.tagName === 'SELECT') {
-                    if (!Array.from(modelEl.options).some(o => o.value === model)) {
-                        const opt = document.createElement('option');
-                        opt.value = model;
-                        opt.textContent = model;
-                        modelEl.appendChild(opt);
-                    }
-                }
-                modelEl.value = model;
-                modelEl.dispatchEvent(new Event('input', { bubbles: true }));
-                modelEl.dispatchEvent(new Event('change', { bubbles: true }));
+            // Write directly into the model input text box in real-time as it tests each model
+            if (modelInput) {
+                modelInput.value = model;
+                modelInput.dispatchEvent(new Event('input', { bubbles: true }));
+                modelInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             const success = await pingModel(provider, model, apiKey, baseUrl);
@@ -500,9 +472,8 @@ async function testAndAutoSelectModel() {
                 saveData();
                 updateSettingsUI();
                 
-                // Force model box to hold the successful model value
-                if (modelEl) {
-                    modelEl.value = model;
+                if (modelInput) {
+                    modelInput.value = model;
                 }
 
                 showToast(`Success! Auto-selected lightweight model: ${model}`, 'success');
