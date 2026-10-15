@@ -1,6 +1,298 @@
-// ==========================================
-// 1. Constants & State
-// ==========================================
+/* ============================================================================
+   SECTION 0 — ANTI-ADBLOCK GUARD
+   ----------------------------------------------------------------------------
+   Self-contained. Does not interfere with chat logic or ad loading.
+   Placed FIRST so it can run detection before anything else.
+   ============================================================================ */
+(function AntiAdBlockGuard() {
+    'use strict';
+
+    const AdBlockGuard = {
+        config: {
+            checkInterval: 2000,
+            ids: {
+                baitGeneric: 'ad-detection-bait',
+                baitAdsense: 'ad-detection-bait-ins',
+                modalPrefix: 'anti-adblock-',
+                watchedAdContainers: [
+                    'ad-banner',
+                    'sidebar-ad'
+                ]
+            },
+            classes: {
+                baitGeneric: "ad-banner adsbygoogle ad-unit advertisement adbox sponsored-ad",
+                baitAdsense: "adsbygoogle",
+                baitAdsensePermittedPrefix: "adsbygoogle-"
+            },
+            styles: {
+                bait: "display: block !important; visibility: visible !important; opacity: 1 !important; height: 1px !important; width: 1px !important; position: absolute !important; left: -10000px !important; top: -10000px !important; background-color: transparent !important; pointer-events: none !important;",
+                modalWrapper: `
+                    position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important;
+                    height: 100% !important; background: rgba(0, 0, 0, 0.5) !important;
+                    color: #242424 !important; font-family: Arial, sans-serif !important;
+                    z-index: 99999 !important; display: flex !important; align-items: center !important;
+                    justify-content: center !important; flex-direction: column !important;
+                    backdrop-filter: blur(5px) !important;
+                `,
+                modalContent: `
+                    max-width: 600px !important; width: 90% !important; padding: 20px !important; background: white !important;
+                    border-radius: 15px !important; box-shadow: 0 0 10px 5px #00000026 !important;
+                    border: 5px solid #e13b3b !important; text-align: center !important;
+                `
+            }
+        },
+
+        state: {
+            warningActive: false,
+            elements: { baitGeneric: null, baitAdsense: null }
+        },
+
+        init() {
+            // Wait for DOM ready so baits can be placed in <body>
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => this.start(), { once: true });
+            } else {
+                this.start();
+            }
+        },
+
+        start() {
+            this.runInitialChecks();
+            this.startLoop();
+            this.bindEvents();
+            this.startIframeMonitor();
+        },
+
+        createBaits() {
+            this.state.elements.baitGeneric = document.getElementById(this.config.ids.baitGeneric);
+            if (!this.state.elements.baitGeneric) {
+                this.state.elements.baitGeneric = document.createElement("div");
+                this.state.elements.baitGeneric.id = this.config.ids.baitGeneric;
+                this.state.elements.baitGeneric.className = this.config.classes.baitGeneric;
+                this.state.elements.baitGeneric.style = this.config.styles.bait;
+                document.body.appendChild(this.state.elements.baitGeneric);
+            }
+
+            this.state.elements.baitAdsense = document.getElementById(this.config.ids.baitAdsense);
+            if (!this.state.elements.baitAdsense) {
+                this.state.elements.baitAdsense = document.createElement("ins");
+                this.state.elements.baitAdsense.id = this.config.ids.baitAdsense;
+                this.state.elements.baitAdsense.className = this.config.classes.baitAdsense;
+                this.state.elements.baitAdsense.style = this.config.styles.bait;
+                document.body.appendChild(this.state.elements.baitAdsense);
+            }
+        },
+
+        refreshBaits() {
+            if (this.state.warningActive) return;
+            ['baitGeneric', 'baitAdsense'].forEach(key => {
+                const el = this.state.elements[key];
+                if (el && el.isConnected) {
+                    document.body.appendChild(el);
+                } else {
+                    this.createBaits();
+                }
+            });
+        },
+
+        generateUniqueId() {
+            return this.config.ids.modalPrefix + Math.random().toString(36).substr(2, 9);
+        },
+
+        createWarningModal() {
+            if (this.state.warningActive) return;
+
+            let existingModal = document.querySelector(`[id^='${this.config.ids.modalPrefix}']`);
+            if (existingModal) {
+                this.restoreModalStyles(existingModal);
+                this.state.warningActive = true;
+                return;
+            }
+
+            const modalId = this.generateUniqueId();
+            const modal = document.createElement("div");
+            modal.id = modalId;
+            modal.style = this.config.styles.modalWrapper;
+
+            const modalContent = document.createElement("div");
+            modalContent.style = this.config.styles.modalContent;
+
+            const image = document.createElement("img");
+            image.src = "https://i.postimg.cc/1tcqQJtb/stop.png";
+            image.alt = "Warning Image";
+            image.style = "margin-bottom: 15px; width: 100px;";
+
+            const title = document.createElement("h2");
+            title.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-shield-lock-fill" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M8 0c-.69 0-1.843.265-2.928.56-1.11.3-2.229.655-2.887.87a1.54 1.54 0 0 0-1.044 1.262c-.596 4.477.787 7.795 2.465 9.99a11.8 11.8 0 0 0 2.517 2.453c.386.273.744.482 1.048.625.28.132.581.24.829.24s.548-.108.829-.24a7 7 0 0 0 1.048-.625 11.8 11.8 0 0 0 2.517-2.453c1.678-2.195 3.061-5.513 2.465-9.99a1.54 1.54 0 0 0-1.044-1.263 63 63 0 0 0-2.887-.87C9.843.266 8.69 0 8 0m0 5a1.5 1.5 0 0 1 .5 2.915l.385 1.99a.5.5 0 0 1-.491.595h-.788a.5.5 0 0 1-.49-.595l.384-1.99A1.5 1.5 0 0 1 8 5" style=" fill: #FFC107; " /> </svg> Ad Blocker detected <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-shield-lock-fill" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M8 0c-.69 0-1.843.265-2.928.56-1.11.3-2.229.655-2.887.87a1.54 1.54 0 0 0-1.044 1.262c-.596 4.477.787 7.795 2.465 9.99a11.8 11.8 0 0 0 2.517 2.453c.386.273.744.482 1.048.625.28.132.581.24.829.24s.548-.108.829-.24a7 7 0 0 0 1.048-.625 11.8 11.8 0 0 0 2.517-2.453c1.678-2.195 3.061-5.513 2.465-9.99a1.54 1.54 0 0 0-1.044-1.263 63 63 0 0 0-2.887-.87C9.843.266 8.69 0 8 0m0 5a1.5 1.5 0 0 1 .5 2.915l.385 1.99a.5.5 0 0 1-.491.595h-.788a.5.5 0 0 1-.49-.595l.384-1.99A1.5 1.5 0 0 1 8 5" style=" fill: #FFC107; " /> </svg>';
+
+            const message = document.createElement("p");
+            message.innerHTML = "Please disable your ad blocker and reload the page.";
+
+            const reloadButton = document.createElement("button");
+            reloadButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16"> <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/> <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/> </svg>&nbsp;Reload';
+            reloadButton.style = `
+                display: flex; background: rgb(233, 68, 68); color: white;
+                border: none; padding: 15px 30px; font-size: 16px;
+                cursor: pointer; border-radius: 5px; align-items: center;
+                margin: 25px auto 0;
+            `;
+            reloadButton.addEventListener("click", () => location.reload());
+
+            modalContent.appendChild(image);
+            modalContent.appendChild(title);
+            modalContent.appendChild(message);
+            modalContent.appendChild(reloadButton);
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            this.state.warningActive = true;
+        },
+
+        restoreModalStyles(modal) {
+            modal.id = this.generateUniqueId();
+            modal.style.cssText = this.config.styles.modalWrapper;
+            modal.style.clipPath = "none";
+        },
+
+        isBlocked(element) {
+            if (!element) return true;
+            if (element.offsetHeight === 0 || element.offsetWidth === 0) return true;
+            const style = getComputedStyle(element);
+            return style.display === "none" || style.visibility === "hidden" || style.opacity === "0";
+        },
+
+        checkState() {
+            if (this.state.warningActive) {
+                const modal = document.querySelector(`[id^='${this.config.ids.modalPrefix}']`);
+                if (modal) {
+                    this.restoreModalStyles(modal);
+                } else {
+                    this.state.warningActive = false;
+                    this.createWarningModal();
+                }
+                return;
+            }
+
+            this.createBaits();
+
+            let detected = false;
+
+            if (this.isBlocked(this.state.elements.baitGeneric)) detected = true;
+
+            if (!detected) {
+                const allAdElements = document.querySelectorAll(`ins.${this.config.classes.baitAdsense}`);
+                for (const ad of allAdElements) {
+                    const classNames = Array.from(ad.classList);
+                    const hasSuspiciousClass = classNames.some(cls =>
+                        cls !== this.config.classes.baitAdsense &&
+                        !cls.startsWith(this.config.classes.baitAdsensePermittedPrefix)
+                    );
+                    if (hasSuspiciousClass || ad.hasAttribute("title")) {
+                        detected = true; break;
+                    }
+                }
+            }
+
+            if (!detected && Array.isArray(this.config.ids.watchedAdContainers)) {
+                for (const containerId of this.config.ids.watchedAdContainers) {
+                    const el = document.getElementById(containerId);
+                    if (!el) continue;                      // Container legitimately not present yet
+                    if (this.isBlocked(el)) { detected = true; break; }
+                }
+            }
+
+            if (detected) this.createWarningModal();
+        },
+
+        runInitialChecks() {
+            this.checkState();
+            [100, 500, 1000, 2000].forEach(delay =>
+                setTimeout(() => this.checkState(), delay)
+            );
+        },
+
+        startLoop() {
+            let cycles = 0;
+            const AGGRESSIVE_LIMIT = 30;
+
+            setInterval(() => {
+                this.checkState();
+                if (!this.state.warningActive && cycles < AGGRESSIVE_LIMIT) {
+                    this.refreshBaits();
+                    cycles++;
+                }
+            }, this.config.checkInterval);
+
+            document.addEventListener("visibilitychange", () => {
+                if (!document.hidden) {
+                    this.checkState();
+                    cycles = 0;
+                }
+            });
+        },
+
+        bindEvents() {
+            window.addEventListener('pageshow', (event) => {
+                if (event.persisted) this.checkState();
+            });
+            window.addEventListener('load', () => {
+                setTimeout(() => this.checkState(), 100);
+            });
+        },
+
+        startIframeMonitor() {
+            const RULES = [
+                /height\s*:\s*1px\s*!important/i,
+                /width\s*:\s*1px\s*!important/i,
+                /max-height\s*:\s*1px\s*!important/i,
+                /max-width\s*:\s*1px\s*!important/i
+            ];
+
+            let iframeDetected = false;
+
+            const check = () => {
+                if (iframeDetected) return;
+                const iframes = document.querySelectorAll('ins iframe[id^="aswift_"]');
+                for (const iframe of iframes) {
+                    const style = iframe.getAttribute('style');
+                    if (!style) continue;
+                    let count = 0;
+                    for (const r of RULES) if (r.test(style)) count++;
+                    if (count >= 2) {
+                        iframeDetected = true;
+                        this.createWarningModal();
+                        try { observer.disconnect(); } catch (e) {}
+                        break;
+                    }
+                }
+            };
+
+            const observer = new MutationObserver((mutations) => {
+                let shouldCheck = false;
+                for (const m of mutations) {
+                    if (m.type === 'childList') shouldCheck = true;
+                    else if (m.type === 'attributes' && (m.target.tagName === 'IFRAME' || m.target.tagName === 'INS')) shouldCheck = true;
+                }
+                if (shouldCheck) check();
+            });
+
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['style']
+            });
+
+            setInterval(check, 3500);
+        }
+    };
+
+    AdBlockGuard.init();
+})();
+
+
+/* ============================================================================
+   SECTION 1 — CONSTANTS & STATE
+   ============================================================================ */
 const STORAGE_KEY = 'aiCharacterAppData';
 
 let appData = {
@@ -26,9 +318,9 @@ let appData = {
 let currentCharacterId = null;
 let isGenerating = false;
 
-// =========================================================
-// 🔑 ADSTERRA CONFIG
-// =========================================================
+/* =========================================================
+   ADSTERRA CONFIG
+   ========================================================= */
 const ADSTERRA_CONFIG = {
     topBanner: {
         enabled: true,
@@ -51,21 +343,21 @@ const ADSTERRA_CONFIG = {
 const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
 const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 
-// ==========================================
-// 2. Bootstrap
-// ==========================================
+/* ============================================================================
+   SECTION 2 — BOOTSTRAP
+   ============================================================================ */
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
-    loadPopunderOnce();   // Load ONCE. Adsterra listener stays, but we gate it.
+    loadPopunderOnce();
     initAds();
     renderCharacterList();
     setupEventListeners();
     updateSettingsUI();
 });
 
-// ==========================================
-// 3. Persistence
-// ==========================================
+/* ============================================================================
+   SECTION 3 — PERSISTENCE
+   ============================================================================ */
 function loadData() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -84,9 +376,9 @@ function saveData() {
     catch (e) { console.error('Failed to save data', e); }
 }
 
-// ==========================================
-// 4. IndexedDB for avatars
-// ==========================================
+/* ============================================================================
+   SECTION 4 — INDEXEDDB FOR AVATARS
+   ============================================================================ */
 const DB_NAME = 'CharacterAvatarsDB';
 const STORE = 'avatars';
 
@@ -121,9 +413,9 @@ async function getAvatar(id) {
     });
 }
 
-// ==========================================
-// 5. Model name normalization
-// ==========================================
+/* ============================================================================
+   SECTION 5 — MODEL NAME NORMALIZATION
+   ============================================================================ */
 function normalizeModelName(model, provider) {
     if (!model) return model;
     let m = model.trim();
@@ -138,9 +430,9 @@ function normalizeModelName(model, provider) {
     return m;
 }
 
-// ==========================================
-// 6. Aggressive sanitizer
-// ==========================================
+/* ============================================================================
+   SECTION 6 — AGGRESSIVE RESPONSE SANITIZER
+   ============================================================================ */
 function cleanAIResponse(raw, characterName) {
     if (!raw) return '';
     let reply = raw;
@@ -196,31 +488,9 @@ function cleanAIResponse(raw, characterName) {
     return reply;
 }
 
-// ==========================================
-// 7. ADS
-// ==========================================
-
-/* =========================================================
-   POPUNDER — proper toggle WITHOUT freezing the UI
-   ---------------------------------------------------------
-   We load Adsterra's popunder script ONCE. Adsterra attaches
-   its own click listener. To disable, we simply set a flag
-   that Adsterra's script can't see, and we DON'T stop other
-   click listeners — because we must not block the app's UI.
-
-   How we actually disable:
-     - Adsterra's popunder fires on document 'click' events
-       (bubble phase). We attach a click listener in the
-       CAPTURE phase on document that, if popunder is OFF,
-       calls e.stopImmediatePropagation() ONLY when the
-       click target is NOT one of our interactive controls.
-     - The whitelist of "always allow" targets includes:
-       button, input, textarea, select, label, a,
-       and anything with [data-no-ad-block].
-     - Everything else (body, div, p, etc.) gets blocked when
-       popunder is OFF. This kills Adsterra's popunder
-       without breaking the UI.
-   ========================================================= */
+/* ============================================================================
+   SECTION 7 — ADS
+   ============================================================================ */
 let popunderOn = true;
 let popunderScriptLoaded = false;
 
@@ -228,16 +498,12 @@ const ALLOWED_TARGETS = 'button, input, textarea, select, label, a, [data-no-ad-
 
 function installPopunderGate() {
     document.addEventListener('click', (e) => {
-        if (popunderOn) return;                     // ON → let Adsterra do its thing
+        if (popunderOn) return;
         const t = e.target;
         if (!t) return;
-
-        // Let all our UI elements through — never break the app.
         if (t.closest && t.closest(ALLOWED_TARGETS)) return;
-
-        // Block the click from reaching Adsterra's popunder listener.
         e.stopImmediatePropagation();
-    }, true /* capture */);
+    }, true);
 }
 
 function loadPopunderOnce() {
@@ -300,7 +566,6 @@ function turnPopunderOff() {
     updatePopunderUI();
 }
 
-/* --- Top Banner --- */
 function loadAdsterraTopBanner() {
     const cfg = ADSTERRA_CONFIG.topBanner;
     const slot = document.getElementById(cfg.containerId);
@@ -352,7 +617,6 @@ function requestDisableTopAd() {
     openModal('disable-ads-modal');
 }
 
-/* --- Sidebar Banner --- */
 function isSidebarAdDismissed() {
     try { return localStorage.getItem(SIDEBAR_AD_DISMISSED_KEY) === '1'; }
     catch (_) { return false; }
@@ -410,18 +674,14 @@ function dismissSidebarAd() {
     showToast('Sidebar ad hidden.', 'info');
 }
 
-/* --- Close button wiring (safe — no UI freeze) --- */
 function wireCloseButtons() {
     const wire = (btn, handler) => {
         if (!btn || btn.dataset.wired === '1') return;
         btn.dataset.wired = '1';
-        // Use plain click, no capture, no stopImmediatePropagation on unrelated events.
-        // Adsterra attaches its popunder on document bubble phase; since these
-        // buttons are marked [data-no-ad-block] we let the gate above pass them.
         btn.setAttribute('data-no-ad-block', '1');
         btn.addEventListener('click', (e) => {
             e.preventDefault();
-            e.stopPropagation();       // keep it from bubbling into content
+            e.stopPropagation();
             handler();
         });
     };
@@ -430,23 +690,14 @@ function wireCloseButtons() {
     wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
 }
 
-/* --- Boot ads --- */
 function initAds() {
-    // Decide initial popunder state
     popunderOn = !isPopunderHiddenThisSession();
-
-    // Install gate BEFORE loading popunder script
     installPopunderGate();
-
-    // Load popunder script once
     loadPopunderOnce();
-
-    // Banner + sidebar
     renderTopAdBanner();
     renderSidebarAd();
     wireCloseButtons();
 
-    // Disable-ads modal
     document.getElementById('confirm-disable-ads')?.addEventListener('click', () => {
         actuallyDismissTopAd();
         closeModal('disable-ads-modal');
@@ -455,7 +706,6 @@ function initAds() {
         closeModal('disable-ads-modal');
     });
 
-    // Top banner toggle
     const bannerToggle = document.getElementById('show-ads-toggle');
     if (bannerToggle) {
         bannerToggle.checked = !appData.adDismissed;
@@ -471,27 +721,22 @@ function initAds() {
         });
     }
 
-    // Popunder pill switch
-    const pillSwitch = document.getElementById('popunder-switch');
-    pillSwitch?.addEventListener('change', (e) => {
+    document.getElementById('popunder-switch')?.addEventListener('change', (e) => {
         if (e.target.checked) turnPopunderOn();
         else turnPopunderOff();
     });
 
-    // Settings popunder toggle
-    const settingsPopToggle = document.getElementById('show-popunder-toggle');
-    settingsPopToggle?.addEventListener('change', (e) => {
+    document.getElementById('show-popunder-toggle')?.addEventListener('change', (e) => {
         if (e.target.checked) turnPopunderOn();
         else turnPopunderOff();
     });
 
-    // Initial UI sync
     updatePopunderUI();
 }
 
-// ==========================================
-// 8. Event listeners
-// ==========================================
+/* ============================================================================
+   SECTION 8 — EVENT LISTENERS
+   ============================================================================ */
 function setupEventListeners() {
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
@@ -564,9 +809,9 @@ function setupEventListeners() {
 function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
 
-// ==========================================
-// 9. Toast & Settings Helpers
-// ==========================================
+/* ============================================================================
+   SECTION 9 — TOAST & SETTINGS HELPERS
+   ============================================================================ */
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -658,9 +903,9 @@ function clearAllData() {
     location.reload();
 }
 
-// ==========================================
-// 10. Automated Model Pinging
-// ==========================================
+/* ============================================================================
+   SECTION 10 — AUTOMATED MODEL PINGING
+   ============================================================================ */
 const TEST_MODELS = {
     openrouter: ['google/gemma-2-9b-it:free','meta-llama/llama-3.1-8b-instruct:free','mistralai/mistral-7b-instruct:free','deepseek/deepseek-r1:free'],
     gemini: ['gemini-3.1-flash-lite','gemini-3.4-flash-lite','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.8-flash','gemma-2-9b-it'],
@@ -760,9 +1005,9 @@ async function pingModel(provider, model, apiKey, baseUrl) {
 
 function handlePngImport(e) { /* stub */ }
 
-// ==========================================
-// 11. Character rendering
-// ==========================================
+/* ============================================================================
+   SECTION 11 — CHARACTER RENDERING
+   ============================================================================ */
 async function renderCharacterList(searchTerm = '') {
     const list = document.getElementById('character-list');
     if (!list) return;
@@ -840,9 +1085,9 @@ async function selectCharacter(id) {
     renderChat();
 }
 
-// ==========================================
-// 12. Character creation
-// ==========================================
+/* ============================================================================
+   SECTION 12 — CHARACTER CREATION
+   ============================================================================ */
 function saveCharacter() {
     const name = document.getElementById('char-name').value.trim();
     if (!name) return showToast('Name is required', 'error');
@@ -889,9 +1134,9 @@ function saveCharacter() {
     selectCharacter(newChar.id);
 }
 
-// ==========================================
-// 13. Chat rendering
-// ==========================================
+/* ============================================================================
+   SECTION 13 — CHAT RENDERING
+   ============================================================================ */
 function renderChat() {
     const container = document.getElementById('messages-container');
     if (!container) return;
@@ -983,9 +1228,9 @@ function addMessageToChat(role, content) {
     renderChat();
 }
 
-// ==========================================
-// 14. Send message
-// ==========================================
+/* ============================================================================
+   SECTION 14 — SEND MESSAGE
+   ============================================================================ */
 async function sendMessage() {
     const input = document.getElementById('message-input');
     const text = input.value.trim();
@@ -1035,9 +1280,9 @@ function clearCurrentChat() {
     showToast('Chat cleared', 'success');
 }
 
-// ==========================================
-// 15. Provider integration
-// ==========================================
+/* ============================================================================
+   SECTION 15 — PROVIDER INTEGRATION
+   ============================================================================ */
 async function callAIProviderWithFallback(character) {
     const settings = appData.aiSettings;
     let primaryError = null;
