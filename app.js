@@ -28,13 +28,64 @@ let currentCharacterId = null;
 let isGenerating = false;
 
 const TEST_MODELS = {
-    openrouter: ['google/gemma-2-9b-it:free', 'meta-llama/llama-3.1-8b-instruct:free', 'mistralai/mistral-7b-instruct:free'],
-    gemini: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro', 'gemma-2-9b-it'],
-    openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
-    anthropic: ['claude-3-5-sonnet-20240620', 'claude-3-haiku-20240307'],
-    groq: ['llama-3.1-8b-instant', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768'],
-    ollama: ['llama3.2', 'mistral', 'gemma2'],
-    custom: ['gpt-3.5-turbo']
+    // OpenRouter Free Tier models
+    openrouter: [
+        'google/gemma-2-9b-it:free',
+        'google/gemma-4-26b-a4b-it:free',
+        'meta-llama/llama-3.1-8b-instruct:free',
+        'mistralai/mistral-7b-instruct:free',
+        'deepseek/deepseek-r1:free'
+    ],
+    
+    // Google AI Studio / Gemini API (Free Tier)
+    gemini: [
+        // Gemini Models
+        'gemini-3.8-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite',
+        // Gemma Hosted Models
+        'gemma-4-31b-it',
+        'gemma-4-26b-a4b-it',
+        'gemma-2-27b-it',
+        'gemma-2-9b-it'
+    ],
+    
+    // OpenAI models
+    openai: [
+        'gpt-4o-mini',
+        'gpt-4o',
+        'o1-mini',
+        'o3-mini'
+    ],
+    
+    // Anthropic models
+    anthropic: [
+        'claude-3-5-sonnet-latest',
+        'claude-3-5-haiku-latest',
+        'claude-3-7-sonnet-latest'
+    ],
+    
+    // Groq models
+    groq: [
+        'llama-3.1-8b-instant',
+        'llama-3.3-70b-versatile',
+        'mixtral-8x7b-32768'
+    ],
+    
+    // Ollama (Local) models
+    ollama: [
+        'llama3.3',
+        'llama3.2',
+        'mistral',
+        'gemma2',
+        'deepseek-r1'
+    ],
+    
+    // Custom endpoint fallback
+    custom: [
+        'gpt-4o-mini'
+    ]
 };
 
 // ==========================================
