@@ -384,6 +384,28 @@ async function sendMessage() {
         document.getElementById('typing-indicator')?.remove();
         addMessageToChat('assistant', response);
     } catch (error) {
+        // REMOVE the typing indicator
+        document.getElementById('typing-indicator')?.remove();
+        
+        // DO NOT insert the error into the chat as a character message.
+        // Instead, only show a toast notification so the character stays in character.
+        showToast(`⚠️ ${error.message}`, 'error');
+        
+        // Optionally: add a subtle system hint (not as the character)
+        // but we skip this to keep full immersion.
+    } finally {
+        isGenerating = false;
+        document.getElementById('send-btn').disabled = false;
+        document.getElementById('message-input').focus();
+    }
+}
+
+    try {
+        const char = appData.characters.find(c => c.id === currentCharacterId);
+        const response = await callAIProviderWithFallback(char);
+        document.getElementById('typing-indicator')?.remove();
+        addMessageToChat('assistant', response);
+    } catch (error) {
         document.getElementById('typing-indicator')?.remove();
         addMessageToChat('assistant', `*Error: ${error.message}*`);
         showToast(error.message, 'error');
