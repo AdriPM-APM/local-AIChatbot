@@ -77,38 +77,65 @@ body {
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 input, textarea, select { font-family: inherit; }
 
-/* =========================
-   Ad banner
-   ========================= */
+/* ===== Ad banner ===== */
 .ad-banner {
+    position: relative;
+    width: 100%;
+    min-height: 60px;
+    background: #0d0a17;
+    border-bottom: 1px solid rgba(255,255,255,.06);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 6px 16px;
-    min-height: 34px;
-    background: rgba(139,92,246,0.06);
-    border-bottom: 1px dashed var(--border);
-    font-size: 11px;
-    color: var(--text-3);
-    letter-spacing: 0.3px;
-    position: relative;
-    z-index: 100;
-    transition: all 0.2s ease;
+    overflow: hidden;
+    z-index: 50;
 }
-.ad-banner.hidden { display: none; }
-.ad-label { cursor: pointer; }
+
+.ad-inner {
+    width: 100%;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.ad-label {
+    color: #8b7fb0;
+    font-size: 13px;
+    letter-spacing: .3px;
+    text-align: center;
+    padding: 0 40px;
+}
+
 .ad-close {
     position: absolute;
-    right: 10px; top: 50%;
-    transform: translateY(-50%);
-    width: 24px; height: 24px;
+    top: 6px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    color: var(--text-3);
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s;
+    border: none;
+    background: rgba(255,255,255,.08);
+    color: #cfc6e6;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .15s ease;
 }
-.ad-close:hover { background: var(--surface-2); color: var(--text); }
+.ad-close:hover { background: rgba(255,255,255,.18); }
+
+/* Adsterra iframe/img safety */
+#adsterra-slot iframe,
+#adsterra-slot img,
+#adsterra-slot ins {
+    max-width: 100%;
+    display: block;
+}
 
 /* =========================
    Mobile topbar
