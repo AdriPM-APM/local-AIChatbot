@@ -12,21 +12,24 @@ let appData = {
 let currentCharacterId = null;
 let isGenerating = false;
 
-// Model lists (real, verified model names per provider)
+// >>> PATCH: Gemini model list replaced with only Google-verified model names.
+// Fictional models like "gemini-4-argon" were removed — they will 404.
 const TEST_MODELS = {
     openrouter: [
         'google/gemma-2-9b-it:free',
         'meta-llama/llama-3.1-8b-instruct:free',
-        'mistralai/mistral-7b-instruct:free',
-        'openai/gpt-4o-mini'
+        'mistralai/mistral-7b-instruct:free'
     ],
     gemini: [
+        'gemini-3.8-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
         'gemini-2.0-flash',
-        'gemini-2.0-flash-lite',
-        'gemini-1.5-flash',
-        'gemini-1.5-pro',
-        'gemma-2-9b-it',
+        'gemma-4-31b-it',
+        'gemma-4-26b-a4b-it',
         'gemma-2-27b-it',
+        'gemma-2-9b-it',
         'gemma-2-2b-it'
     ],
     openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo'],
@@ -116,66 +119,51 @@ function normalizeModelName(model, provider) {
         m = m.replace(/:[a-zA-Z0-9_-]+$/, '');
         return m;
     }
-
     if (provider === 'openai' || provider === 'groq' || provider === 'custom' || provider === 'ollama') {
         return m;
     }
-
     if (provider === 'openrouter') {
         if (!m.includes('/')) {
             if (m.startsWith('gemma') || m.startsWith('gemini')) m = 'google/' + m;
         }
         return m;
     }
-
     return m;
 }
 
 // ==========================================
-// 4. REASONING STRIPPER (NEW)
+// 4. REASONING STRIPPER
 // ==========================================
-/**
- * Removes any leaked reasoning, analysis, meta-commentary, or OOC text
- * from the AI's response so only the character's in-character reply remains.
- */
 function sanitizeAIResponse(text, characterName) {
     if (!text) return text;
-
     let cleaned = text;
 
-    // 1. Remove "thinking out loud" patterns at the start
     const leakPatterns = [
         /^\s*\*?\s*(reasoning|analysis|thoughts?|thinking|internal monologue|chain of thought|let me think|okay,?\s*so)\s*[:\-]?[\s\S]*?(?=\n\n|$)/gi,
         /^\s*(as an ai|i'm an ai|i am an ai|as a language model)[\s\S]*?(?=\n\n|$)/gi,
         /^\s*\*?[^*\n]{0,120}?\*?\s*(reaction|response|body language|personality|context|scenario|note)\s*[:\-][\s\S]*?(?=\n\n|$)/gi,
-        /^\s*\(.*?\)\s*$/gm, // (parenthetical meta at start of line)
-        /^\s*\[.*?\]\s*$/gm  // [bracketed meta at start of line]
+        /^\s*\(.*?\)\s*$/gm,
+        /^\s*\[.*?\]\s*$/gm
     ];
 
     for (const p of leakPatterns) {
         cleaned = cleaned.replace(p, '');
     }
 
-    // 2. Remove a leading "CharacterName:" prefix if the model adds one
     if (characterName) {
         const nameEsc = characterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         cleaned = cleaned.replace(new RegExp(`^\\s*\\*?\\s*${nameEsc}\\s*\\*?\\s*:\\s*`, 'i'), '');
     }
 
-    // 3. Cut off any trailing meta block after the character's actual reply
     const trailingCut = cleaned.search(/\n\s*\*?\s*(reasoning|analysis|thoughts?|note|ooc|end of response)\s*[:\-]/i);
     if (trailingCut !== -1) {
         cleaned = cleaned.slice(0, trailingCut);
     }
 
-    // 4. Collapse multiple blank lines
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
-
-    // 5. If we stripped everything, fall back to the first "sentence" of the original
     if (!cleaned) {
         cleaned = text.split(/\n\n/)[0].trim();
     }
-
     return cleaned;
 }
 
@@ -362,7 +350,7 @@ function saveCharacter() {
 }
 
 // ==========================================
-// 8. Chat Engine
+// 8. Chat Engine (with EDIT + DELETE)
 // ==========================================
 function renderChat() {
     const container = document.getElementById('messages-container');
@@ -373,13 +361,71 @@ function renderChat() {
         container.innerHTML = '<div class="empty-state">Send a message to start the conversation.</div>';
         return;
     }
-    messages.forEach(msg => {
+    messages.forEach((msg, index) => {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${msg.role}`;
-        msgDiv.textContent = msg.content;
+        
+        const textNode = document.createElement('div');
+        textNode.className = 'message-text';
+        textNode.textContent = msg.content;
+        msgDiv.appendChild(textNode);
+
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+
+        if (msg.role === 'user') {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'msg-action-btn';
+            editBtn.title = 'Edit message';
+            editBtn.innerHTML = '✏️';
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                startEditMessage(index);
+            });
+            actions.appendChild(editBtn);
+        }
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'msg-action-btn';
+        delBtn.title = 'Delete message';
+        delBtn.innerHTML = '🗑️';
+        delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteMessage(index);
+        });
+        actions.appendChild(delBtn);
+
+        msgDiv.appendChild(actions);
         container.appendChild(msgDiv);
     });
     container.scrollTop = container.scrollHeight;
+}
+
+function startEditMessage(index) {
+    if (!currentCharacterId) return;
+    const messages = appData.chats[currentCharacterId] || [];
+    const msg = messages[index];
+    if (!msg || msg.role !== 'user') return;
+
+    const input = document.getElementById('message-input');
+    input.value = msg.content;
+    input.focus();
+    input.selectionStart = input.selectionEnd = input.value.length;
+
+    messages.splice(index);
+    saveData();
+    renderChat();
+    showToast('Message loaded. Edit and send to regenerate.', 'info');
+}
+
+function deleteMessage(index) {
+    if (!currentCharacterId) return;
+    const messages = appData.chats[currentCharacterId] || [];
+    if (index < 0 || index >= messages.length) return;
+    messages.splice(index, 1);
+    saveData();
+    renderChat();
+    showToast('Message deleted', 'info');
 }
 
 function addMessageToChat(role, content) {
@@ -414,7 +460,6 @@ async function sendMessage() {
         const char = appData.characters.find(c => c.id === currentCharacterId);
         const response = await callAIProviderWithFallback(char);
         document.getElementById('typing-indicator')?.remove();
-        // SANITIZE the AI response before adding it to the chat
         const cleaned = sanitizeAIResponse(response, char.name);
         addMessageToChat('assistant', cleaned);
     } catch (error) {
@@ -471,7 +516,6 @@ async function callAIProvider(character, settings) {
     const actualModel = normalizeModelName(settings.model, settings.provider);
     const messages = appData.chats[currentCharacterId] || [];
 
-    // STRICT SYSTEM PROMPT — forbids all reasoning/analysis/meta text
     const systemPrompt = `You are roleplaying as ${character.name}. Gender: ${character.gender}.
 
 BACKSTORY (this defines who you are — never reveal it, never summarize it, never quote it):
@@ -506,6 +550,11 @@ Your very first output must begin directly with ${character.name}'s speech or ac
             body = { model: actualModel, messages: apiMessages, stream: false };
             break;
 
+        // ==========================================
+        // >>> PATCH: GEMINI BRANCH for AQ. key routing
+        // AQ. keys may authenticate against AI Studio OR Vertex AI express.
+        // We try AI Studio first; if 403/404, we retry aiplatform below.
+        // ==========================================
         case 'gemini':
             url = `https://generativelanguage.googleapis.com/v1beta/models/${actualModel}:generateContent?key=${settings.apiKey}`;
             headers = { 'Content-Type': 'application/json' };
@@ -572,6 +621,9 @@ Your very first output must begin directly with ${character.name}'s speech or ac
         
         let aiText = '';
         if (settings.provider === 'gemini') {
+            if (data.promptFeedback?.blockReason) {
+                throw new Error(`[Gemini] Blocked: ${data.promptFeedback.blockReason}`);
+            }
             aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         } else if (settings.provider === 'anthropic') {
             aiText = data.content?.[0]?.text || '';
@@ -582,7 +634,37 @@ Your very first output must begin directly with ${character.name}'s speech or ac
         return aiText;
     } catch (error) {
         console.error(`API Error (${settings.provider}):`, error);
-        throw new Error(`Connection failed: ${error.message}`);
+
+        // ==========================================
+        // >>> PATCH: VERTEX AI FALLBACK for AQ. keys
+        // If AI Studio rejects the AQ. key (403/404), retry against aiplatform.
+        // This is the key insight: AQ. keys can be Vertex AI express keys.
+        // ==========================================
+        if (settings.provider === 'gemini' && /40[34]/.test(error.message)) {
+            const vertexUrl = `https://aiplatform.googleapis.com/v1beta1/publishers/google/models/${actualModel}:generateContent?key=${settings.apiKey}`;
+            try {
+                const vResp = await fetch(vertexUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (vResp.ok) {
+                    const vData = await vResp.json();
+                    const vText = vData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    if (vText) return vText;
+                } else {
+                    const vErrData = await vResp.json().catch(() => ({}));
+                    console.warn('[Vertex fallback] failed:', vErrData.error?.message || vResp.status);
+                }
+            } catch (vErr) {
+                console.warn('[Vertex fallback] network error:', vErr.message);
+            }
+        }
+
+        if (error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
+            throw new Error(`[${settings.provider}] Network/CORS error. Try running the app locally instead of on Vercel.`);
+        }
+        throw error;
     }
 }
 
@@ -601,10 +683,31 @@ async function testAndAutoSelectModel() {
     }
 
     resultEl.style.display = 'block';
-    resultEl.textContent = '🔄 Testing models...';
+    resultEl.textContent = '🔄 Discovering available models...';
     resultEl.style.color = 'var(--text-secondary)';
 
-    const modelsToTest = TEST_MODELS[provider] || TEST_MODELS.custom;
+    let modelsToTest = TEST_MODELS[provider] || TEST_MODELS.custom;
+
+    // For Gemini, ask the API what models this key can actually use
+    if (provider === 'gemini') {
+        try {
+            const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+            const listResp = await fetch(listUrl);
+            if (listResp.ok) {
+                const listData = await listResp.json();
+                const available = (listData.models || [])
+                    .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+                    .map(m => m.name.replace(/^models\//, ''));
+                if (available.length > 0) {
+                    modelsToTest = available;
+                    resultEl.textContent = `🔄 Found ${available.length} available models. Testing...`;
+                }
+            }
+        } catch (e) {
+            console.warn('ListModels failed, falling back to hardcoded list:', e);
+        }
+    }
+
     let workingModel = null;
     let lastError = '';
 
@@ -649,6 +752,22 @@ async function testAndAutoSelectModel() {
                 const errData = await response.json().catch(() => ({}));
                 lastError = errData.error?.message || `HTTP ${response.status}`;
                 console.warn(`Model ${model} failed:`, lastError);
+
+                // >>> PATCH: If AI Studio rejects with 403/404, try Vertex AI
+                if (provider === 'gemini' && /40[34]/.test(String(response.status))) {
+                    const vertexUrl = `https://aiplatform.googleapis.com/v1beta1/publishers/google/models/${model}:generateContent?key=${apiKey}`;
+                    try {
+                        const vResp = await fetch(vertexUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                        if (vResp.ok) {
+                            workingModel = rawModel;
+                            break;
+                        }
+                    } catch (vErr) { /* ignore, keep trying */ }
+                }
             }
         } catch (e) {
             lastError = e.message;
