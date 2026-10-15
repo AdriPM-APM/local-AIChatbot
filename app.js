@@ -259,7 +259,7 @@ function cleanAIResponse(raw, characterName) {
 }
 
 // ==========================================
-// 7. ADS — Top Banner (with friendly disable modal) + Sidebar + Popunder
+// 7. ADS
 // ==========================================
 
 function isPopunderHiddenThisSession() {
@@ -309,7 +309,6 @@ function renderTopAdBanner() {
     loadAdsterraTopBanner();
 }
 
-/** Called when the user confirms disabling via the friendly modal */
 function actuallyDismissTopAd() {
     appData.adDismissed = true;
     saveData();
@@ -321,7 +320,6 @@ function actuallyDismissTopAd() {
         banner.innerHTML = '';
     }
 
-    // Clean any stray Adsterra overlays
     try {
         document.querySelectorAll(
             'body > iframe[src*="archeryconditionssniff"],' +
@@ -333,9 +331,7 @@ function actuallyDismissTopAd() {
     showToast('Top banner disabled. Popunder & sidebar ad stay on to support Hubs.', 'info');
 }
 
-/** Opens the friendly "are you sure?" modal */
 function requestDisableTopAd() {
-    // If already dismissed, do nothing
     if (appData.adDismissed) return;
     openModal('disable-ads-modal');
 }
@@ -399,6 +395,7 @@ function dismissSidebarAd() {
         const slot = document.getElementById('sidebar-ad-slot');
         if (slot) slot.innerHTML = '';
     }
+    showToast('Sidebar ad hidden.', 'info');
 }
 
 /* --- Popunder --- */
@@ -449,7 +446,7 @@ function hidePopunder() {
     hidePopunderPill();
 }
 
-/* --- Close buttons: capture-phase, cannot be hijacked by Adsterra --- */
+/* --- Close buttons --- */
 function wireCloseButtons() {
     const wire = (btn, handler) => {
         if (!btn || btn.dataset.wired === '1') return;
@@ -467,13 +464,10 @@ function wireCloseButtons() {
         btn.addEventListener('touchstart', wrapped, { capture: true, passive: false });
     };
 
-    // Top banner ✕ -> opens friendly modal
     wire(document.getElementById('close-ad'), requestDisableTopAd);
-
-    // Sidebar ✕ -> direct dismiss (no modal, it's the money ad)
     wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
 
-    // Block propagation of close-button clicks from reaching Adsterra
+    // Block propagation from reaching Adsterra's document-level listener
     [document.getElementById('ad-banner'), document.getElementById('sidebar-ad')]
         .filter(Boolean)
         .forEach(wrapper => {
@@ -492,16 +486,10 @@ function wireCloseButtons() {
 
 /* --- Boot --- */
 function initAds() {
-    // Top banner
     renderTopAdBanner();
-
-    // Sidebar banner (always shown unless user explicitly dismissed previously)
     renderSidebarAd();
-
-    // Wire all close buttons
     wireCloseButtons();
 
-    // === Disable-ads modal buttons ===
     document.getElementById('confirm-disable-ads')?.addEventListener('click', () => {
         actuallyDismissTopAd();
         closeModal('disable-ads-modal');
@@ -510,7 +498,6 @@ function initAds() {
         closeModal('disable-ads-modal');
     });
 
-    // Settings toggles
     const bannerToggle = document.getElementById('show-ads-toggle');
     if (bannerToggle) {
         bannerToggle.checked = !appData.adDismissed;
@@ -520,14 +507,12 @@ function initAds() {
                 saveData();
                 renderTopAdBanner();
             } else {
-                // Show friendly modal instead of immediately disabling
                 e.target.checked = true;
                 requestDisableTopAd();
             }
         });
     }
 
-    // Popunder
     if (isPopunderHiddenThisSession()) {
         hidePopunderPill();
     } else {
