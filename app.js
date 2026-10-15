@@ -27,7 +27,7 @@ let currentCharacterId = null;
 let isGenerating = false;
 
 // =========================================================
-// 🔑 ADSTERRA CONFIG — your real keys baked in
+// 🔑 ADSTERRA CONFIG — your real keys
 // =========================================================
 const ADSTERRA_CONFIG = {
     banner: {
@@ -41,7 +41,6 @@ const ADSTERRA_CONFIG = {
     }
 };
 
-// Popunder session flag (so user can hide it for the current tab session only)
 const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
 
 // Prioritizes lighter, older, and high-efficiency models first
@@ -255,7 +254,6 @@ function cleanAIResponse(raw, characterName) {
 // 7. ADS — Banner + Popunder
 // ==========================================
 
-/* ----- Popunder session helpers ----- */
 function isPopunderHiddenThisSession() {
     try { return sessionStorage.getItem(POPUNDER_SESSION_KEY) === '1'; }
     catch (_) { return false; }
@@ -306,7 +304,21 @@ function renderAdBanner() {
 function dismissAd() {
     appData.adDismissed = true;
     saveData();
-    renderAdBanner();
+
+    const banner = document.getElementById('ad-banner');
+    if (banner) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+    }
+
+    // Remove any stray Adsterra overlays that may have escaped the container
+    try {
+        document.querySelectorAll(
+            'body > iframe[src*="archeryconditionssniff"],' +
+            'body > iframe[src*="highperformanceformat"],' +
+            'body > div[id^="container-"]'
+        ).forEach(el => el.remove());
+    } catch (_) {}
 }
 
 /* ----- Popunder (Adsterra) ----- */
@@ -328,8 +340,7 @@ function loadAdsterraPopunder() {
 function showPopunderPill() {
     const pill = document.getElementById('popunder-pill');
     if (!pill) return;
-    pill.classList.remove('hidden');
-    pill.classList.remove('off');
+    pill.classList.remove('hidden', 'off');
     const state = document.getElementById('popunder-state');
     if (state) state.textContent = 'ON';
     const toggle = document.getElementById('show-popunder-toggle');
@@ -356,18 +367,50 @@ function showPopunder() {
 function hidePopunder() {
     markPopunderHidden();
     hidePopunderPill();
-    // Note: once an Adsterra popunder script is loaded it keeps listening,
-    // so we rely on sessionStorage + not re-injecting it on next load.
+}
+
+/* ----- Close button: bulletproof wiring -----
+   Adsterra's native banner script attaches a click handler on document
+   (capture phase) that hijacks clicks. We must:
+     1. Attach in CAPTURE phase with highest priority
+     2. stopImmediatePropagation() + preventDefault()
+     3. Also handle pointerdown/touchstart for mobile
+*/
+function wireCloseButton() {
+    const btn = document.getElementById('close-ad');
+    if (!btn || btn.dataset.wired === '1') return;
+    btn.dataset.wired = '1';
+
+    const handler = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        dismissAd();
+    };
+
+    btn.addEventListener('click', handler, true);
+    btn.addEventListener('pointerdown', handler, true);
+    btn.addEventListener('touchstart', handler, { capture: true, passive: false });
+
+    const wrapper = document.getElementById('ad-banner');
+    if (wrapper) {
+        ['click', 'pointerdown', 'touchstart'].forEach(type => {
+            wrapper.addEventListener(type, (e) => {
+                if (e.target && e.target.id === 'close-ad') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                }
+            }, true);
+        });
+    }
 }
 
 /* ----- Boot: force both ads ON every load ----- */
 function initAds() {
-    // Banner: always ON unless user explicitly dismissed it before
-    // (we honor appData.adDismissed so the ✕ persists across refresh;
-    //  remove that check if you want it forced back ON every load)
     renderAdBanner();
+    wireCloseButton();
 
-    // Banner toggle in settings
     const bannerToggle = document.getElementById('show-ads-toggle');
     if (bannerToggle) {
         bannerToggle.checked = !appData.adDismissed;
@@ -378,24 +421,18 @@ function initAds() {
         });
     }
 
-    // ✕ button
-    document.getElementById('close-ad')?.addEventListener('click', dismissAd);
-
-    // Popunder: always ON unless hidden THIS session
     if (isPopunderHiddenThisSession()) {
         hidePopunderPill();
     } else {
         showPopunder();
     }
 
-    // Popunder toggle in settings
     const popToggle = document.getElementById('show-popunder-toggle');
     popToggle?.addEventListener('change', (e) => {
         if (e.target.checked) showPopunder();
         else hidePopunder();
     });
 
-    // Popunder pill "Hide" button
     document.getElementById('popunder-hide')?.addEventListener('click', (e) => {
         e.stopPropagation();
         hidePopunder();
