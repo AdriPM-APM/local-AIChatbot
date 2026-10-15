@@ -51,61 +51,13 @@ const ADSTERRA_CONFIG = {
 const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
 const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 
-// Prioritizes lighter, older, and high-efficiency models first
-const TEST_MODELS = {
-    openrouter: [
-        'google/gemma-2-9b-it:free',
-        'meta-llama/llama-3.1-8b-instruct:free',
-        'mistralai/mistral-7b-instruct:free',
-        'google/gemma-4-26b-a4b-it:free',
-        'deepseek/deepseek-r1:free'
-    ],
-    gemini: [
-        'gemini-3.1-flash-lite',
-        'gemini-3.4-flash-lite',
-        'gemini-3.5-flash-lite',
-        'gemini-3.6-flash',
-        'gemini-3.8-flash',
-        'gemma-2-9b-it',
-        'gemma-2-27b-it',
-        'gemma-4-26b-a4b-it',
-        'gemma-4-31b-it'
-    ],
-    openai: [
-        'gpt-4o-mini',
-        'gpt-3.5-turbo',
-        'gpt-4o',
-        'o1-mini',
-        'o3-mini'
-    ],
-    anthropic: [
-        'claude-3-haiku-20240307',
-        'claude-3-5-haiku-latest',
-        'claude-3-5-sonnet-latest',
-        'claude-3-7-sonnet-latest'
-    ],
-    groq: [
-        'llama-3.1-8b-instant',
-        'mixtral-8x7b-32768',
-        'llama-3.3-70b-versatile'
-    ],
-    ollama: [
-        'gemma2',
-        'llama3.2',
-        'mistral',
-        'llama3.3',
-        'deepseek-r1'
-    ],
-    custom: [
-        'gpt-4o-mini'
-    ]
-};
-
 // ==========================================
 // 2. Bootstrap
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
+    // Load popunder VERY early so it can attach its listeners
+    bootPopunder();
     initAds();
     renderCharacterList();
     setupEventListeners();
@@ -125,17 +77,12 @@ function loadData() {
             }
             appData = { ...appData, ...parsed, aiSettings: appData.aiSettings };
         }
-    } catch (e) {
-        console.error('Failed to load data', e);
-    }
+    } catch (e) { console.error('Failed to load data', e); }
 }
 
 function saveData() {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-    } catch (e) {
-        console.error('Failed to save data', e);
-    }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); }
+    catch (e) { console.error('Failed to save data', e); }
 }
 
 // ==========================================
@@ -206,8 +153,7 @@ function cleanAIResponse(raw, characterName) {
         if (!l) continue;
         if (/^\*\s*[A-Za-z][A-Za-z\s/]+:\s*/.test(l)) continue;
         if (/^\*?\s*(User asks|Character|Input context|Internal state|Motivation|Emotion|Direct response|Dialogue|Length|Format|Followed by|No meta-text|First person|THOUGHT)\b/i.test(l)) continue;
-        firstRealIdx = i;
-        break;
+        firstRealIdx = i; break;
     }
     if (firstRealIdx > 0) reply = lines.slice(firstRealIdx).join('\n');
 
@@ -215,18 +161,12 @@ function cleanAIResponse(raw, characterName) {
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
     const headerLines = [
-        /^\s*\*\s*format\s*:.*\$/gim,
-        /^\s*\*\s*user\s+asks?\s*:.*\$/gim,
-        /^\s*\*\s*character\s*:.*\$/gim,
-        /^\s*\*\s*input\s+context\s*:.*\$/gim,
-        /^\s*\*\s*internal\s+state\s*:.*\$/gim,
-        /^\s*\*\s*motivation\s*:.*\$/gim,
-        /^\s*\*\s*emotion\s*:.*\$/gim,
-        /^\s*\*\s*direct\s+response\s*:.*\$/gim,
-        /^\s*\*\s*dialogue\s*\/\s*action\s*:.*\$/gim,
-        /^\s*\*\s*length\s*:.*\$/gim,
-        /^\s*\*\s*followed\s+by.*\$/gim,
-        /^\s*\*\s*no\s+meta-text.*\$/gim,
+        /^\s*\*\s*format\s*:.*\$/gim, /^\s*\*\s*user\s+asks?\s*:.*\$/gim,
+        /^\s*\*\s*character\s*:.*\$/gim, /^\s*\*\s*input\s+context\s*:.*\$/gim,
+        /^\s*\*\s*internal\s+state\s*:.*\$/gim, /^\s*\*\s*motivation\s*:.*\$/gim,
+        /^\s*\*\s*emotion\s*:.*\$/gim, /^\s*\*\s*direct\s+response\s*:.*\$/gim,
+        /^\s*\*\s*dialogue\s*\/\s*action\s*:.*\$/gim, /^\s*\*\s*length\s*:.*\$/gim,
+        /^\s*\*\s*followed\s+by.*\$/gim, /^\s*\*\s*no\s+meta-text.*\$/gim,
         /^\s*\*\s*first\s+person.*\$/gim
     ];
     for (const p of headerLines) reply = reply.replace(p, '');
@@ -262,6 +202,112 @@ function cleanAIResponse(raw, characterName) {
 // 7. ADS
 // ==========================================
 
+/* =========================================================
+   POPUNDER — real on/off switch
+   ---------------------------------------------------------
+   Adsterra's popunder script attaches a click listener at the
+   document level. We can't "unload" a script once loaded, so
+   we wrap the popunder's window.open / target behavior:
+
+   - We load the popunder script the moment the user first
+     interacts with the page (or immediately, if allowed).
+   - To TURN OFF, we install a global handler that swallows
+     all clicks that would trigger the popunder for a short
+     window (Adsterra uses `document.addEventListener('click', ...)`).
+   - Toggling back ON removes the swallow handler.
+   ========================================================= */
+const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
+
+let popunderLoaded = false;
+let popunderBlockHandler = null;
+let popunderOn = false;
+
+function installPopunderBlocker() {
+    if (popunderBlockHandler) return;
+    popunderBlockHandler = (e) => {
+        // If popunder is OFF, stop all clicks from reaching Adsterra's listener.
+        // We must run in CAPTURE phase and stop propagation BEFORE it bubbles.
+        if (!popunderOn) {
+            e.stopImmediatePropagation();
+        }
+    };
+    // Attach to window (capture), so we can block clicks from ever
+    // reaching document-level listeners Adsterra installs.
+    window.addEventListener('click', popunderBlockHandler, true);
+}
+
+function loadPopunderScript() {
+    if (popunderLoaded) return;
+    const cfg = ADSTERRA_CONFIG.popunder;
+    if (!cfg.enabled) return;
+
+    const s = document.createElement('script');
+    s.id = 'adsterra-popunder-script';
+    s.type = 'text/javascript';
+    s.async = true;
+    s.setAttribute('data-cfasync', 'false');
+    s.src = cfg.scriptSrc;
+    s.onload = () => { popunderLoaded = true; };
+    s.onerror = () => console.warn('[ads] popunder failed to load');
+    document.body.appendChild(s);
+    popunderLoaded = true; // optimistic
+}
+
+function bootPopunder() {
+    // Always install the blocker so we can toggle instantly.
+    installPopunderBlocker();
+
+    // Decide initial state
+    const hidden = isPopunderHiddenThisSession();
+    popunderOn = !hidden;
+
+    // Load the popunder script immediately — Adsterra counts impressions on click.
+    loadPopunderScript();
+
+    // Update UI
+    updatePopunderUI();
+}
+
+function updatePopunderUI() {
+    const pill = document.getElementById('popunder-pill');
+    const state = document.getElementById('popunder-state');
+    const switchEl = document.getElementById('popunder-switch');
+    const settingsToggle = document.getElementById('show-popunder-toggle');
+
+    if (!pill) return;
+
+    // Always show the pill (except if user permanently disabled via Settings, see below)
+    pill.classList.remove('hidden');
+
+    if (popunderOn) {
+        pill.classList.remove('off');
+        if (state) state.textContent = 'ON';
+        if (switchEl) switchEl.checked = true;
+        if (settingsToggle) settingsToggle.checked = true;
+    } else {
+        pill.classList.add('off');
+        if (state) state.textContent = 'OFF';
+        if (switchEl) switchEl.checked = false;
+        if (settingsToggle) settingsToggle.checked = false;
+    }
+}
+
+function turnPopunderOn() {
+    popunderOn = true;
+    markPopunderVisible();
+    // Make sure the script is present so the next click triggers a popunder
+    loadPopunderScript();
+    updatePopunderUI();
+    showToast('Popunder enabled', 'success');
+}
+
+function turnPopunderOff() {
+    popunderOn = false;
+    markPopunderHidden();
+    updatePopunderUI();
+    showToast('Popunder disabled for this session', 'info');
+}
+
 function isPopunderHiddenThisSession() {
     try { return sessionStorage.getItem(POPUNDER_SESSION_KEY) === '1'; }
     catch (_) { return false; }
@@ -285,7 +331,6 @@ function loadAdsterraTopBanner() {
         if (fallback) fallback.style.display = 'inline';
         return;
     }
-
     if (fallback) fallback.style.display = 'none';
     slot.innerHTML = '';
 
@@ -312,14 +357,11 @@ function renderTopAdBanner() {
 function actuallyDismissTopAd() {
     appData.adDismissed = true;
     saveData();
-
     const banner = document.getElementById('ad-banner');
     if (banner) {
-        banner.classList.add('collapsed');
         banner.style.display = 'none';
         banner.innerHTML = '';
     }
-
     try {
         document.querySelectorAll(
             'body > iframe[src*="archeryconditionssniff"],' +
@@ -327,7 +369,6 @@ function actuallyDismissTopAd() {
             'body > div[id^="container-"]'
         ).forEach(el => el.remove());
     } catch (_) {}
-
     showToast('Top banner disabled. Popunder & sidebar ad stay on to support Hubs.', 'info');
 }
 
@@ -356,10 +397,10 @@ function loadAdsterraSidebarBanner() {
         if (fallback) fallback.style.display = 'inline';
         return;
     }
-
     if (fallback) fallback.style.display = 'none';
     slot.innerHTML = '';
 
+    // Adsterra iframe banner wants atOptions on window
     window.atOptions = {
         key: cfg.key,
         format: 'iframe',
@@ -398,93 +439,49 @@ function dismissSidebarAd() {
     showToast('Sidebar ad hidden.', 'info');
 }
 
-/* --- Popunder --- */
-function loadAdsterraPopunder() {
-    const cfg = ADSTERRA_CONFIG.popunder;
-    if (!cfg.enabled) return;
-    if (document.getElementById('adsterra-popunder-script')) return;
-
-    const s = document.createElement('script');
-    s.id = 'adsterra-popunder-script';
-    s.type = 'text/javascript';
-    s.async = true;
-    s.setAttribute('data-cfasync', 'false');
-    s.src = cfg.scriptSrc;
-    s.onerror = () => console.warn('[ads] popunder failed to load');
-    document.body.appendChild(s);
-}
-
-function showPopunderPill() {
-    const pill = document.getElementById('popunder-pill');
-    if (!pill) return;
-    pill.classList.remove('hidden', 'off');
-    const state = document.getElementById('popunder-state');
-    if (state) state.textContent = 'ON';
-    const toggle = document.getElementById('show-popunder-toggle');
-    if (toggle) toggle.checked = true;
-}
-
-function hidePopunderPill() {
-    const pill = document.getElementById('popunder-pill');
-    if (!pill) return;
-    pill.classList.remove('hidden');
-    pill.classList.add('off');
-    const state = document.getElementById('popunder-state');
-    if (state) state.textContent = 'OFF';
-    const toggle = document.getElementById('show-popunder-toggle');
-    if (toggle) toggle.checked = false;
-}
-
-function showPopunder() {
-    markPopunderVisible();
-    showPopunderPill();
-    loadAdsterraPopunder();
-}
-
-function hidePopunder() {
-    markPopunderHidden();
-    hidePopunderPill();
-}
-
-/* --- Close buttons --- */
+/* --- Close button wiring (bulletproof) --- */
 function wireCloseButtons() {
     const wire = (btn, handler) => {
         if (!btn || btn.dataset.wired === '1') return;
         btn.dataset.wired = '1';
 
         const wrapped = (e) => {
+            // IMPORTANT: block Adsterra popunder / click hijackers
             e.preventDefault();
             e.stopPropagation();
             if (e.stopImmediatePropagation) e.stopImmediatePropagation();
             handler();
         };
 
-        btn.addEventListener('click', wrapped, true);
+        // pointerdown runs BEFORE Adsterra's click listener typically fires,
+        // and capture:true runs before bubble-phase listeners.
         btn.addEventListener('pointerdown', wrapped, true);
+        btn.addEventListener('click', wrapped, true);
         btn.addEventListener('touchstart', wrapped, { capture: true, passive: false });
     };
 
     wire(document.getElementById('close-ad'), requestDisableTopAd);
     wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
 
-    // Block propagation from reaching Adsterra's document-level listener
-    [document.getElementById('ad-banner'), document.getElementById('sidebar-ad')]
-        .filter(Boolean)
-        .forEach(wrapper => {
-            ['click', 'pointerdown', 'touchstart'].forEach(type => {
-                wrapper.addEventListener(type, (e) => {
-                    const t = e.target;
-                    if (t && (t.id === 'close-ad' || t.id === 'sidebar-ad-close')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-                    }
-                }, true);
-            });
+    // Ensure clicks on the ✕ can never bubble up to Adsterra's document listener
+    const blocks = [document.getElementById('ad-banner'), document.getElementById('sidebar-ad')]
+        .filter(Boolean);
+
+    blocks.forEach(wrap => {
+        ['pointerdown', 'click', 'touchstart'].forEach(type => {
+            wrap.addEventListener(type, (e) => {
+                const t = e.target;
+                if (t && (t.id === 'close-ad' || t.id === 'sidebar-ad-close')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+                }
+            }, true);
         });
+    });
 }
 
-/* --- Boot --- */
+/* --- Boot ads --- */
 function initAds() {
     renderTopAdBanner();
     renderSidebarAd();
@@ -498,6 +495,7 @@ function initAds() {
         closeModal('disable-ads-modal');
     });
 
+    // Top banner toggle
     const bannerToggle = document.getElementById('show-ads-toggle');
     if (bannerToggle) {
         bannerToggle.checked = !appData.adDismissed;
@@ -513,21 +511,18 @@ function initAds() {
         });
     }
 
-    if (isPopunderHiddenThisSession()) {
-        hidePopunderPill();
-    } else {
-        showPopunder();
-    }
-
-    const popToggle = document.getElementById('show-popunder-toggle');
-    popToggle?.addEventListener('change', (e) => {
-        if (e.target.checked) showPopunder();
-        else hidePopunder();
+    // Popunder: pill switch + settings toggle
+    const pillSwitch = document.getElementById('popunder-switch');
+    pillSwitch?.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (e.target.checked) turnPopunderOn();
+        else turnPopunderOff();
     });
 
-    document.getElementById('popunder-hide')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        hidePopunder();
+    const settingsPopToggle = document.getElementById('show-popunder-toggle');
+    settingsPopToggle?.addEventListener('change', (e) => {
+        if (e.target.checked) turnPopunderOn();
+        else turnPopunderOff();
     });
 }
 
@@ -566,9 +561,7 @@ function setupEventListeners() {
         btn.addEventListener('click', () => closeModal(btn.dataset.modal));
     });
     document.querySelectorAll('.modal-overlay').forEach(ov => {
-        ov.addEventListener('click', (e) => {
-            if (e.target === ov) closeModal(ov.id);
-        });
+        ov.addEventListener('click', (e) => { if (e.target === ov) closeModal(ov.id); });
     });
 
     document.getElementById('provider-select')?.addEventListener('change', (e) => {
@@ -681,9 +674,7 @@ function saveSettings() {
 
     appData.aiSettings = {
         ...appData.aiSettings,
-        provider,
-        model,
-        apiKey,
+        provider, model, apiKey,
         openrouterFallbackKey: fallbackKey,
         baseUrl,
         temperature: parseFloat(document.getElementById('temperature-slider')?.value || 0.7),
@@ -718,7 +709,6 @@ async function testAndAutoSelectModel() {
         showToast('No test models available for this provider.', 'error');
         return;
     }
-
     if (!apiKey && provider !== 'ollama') {
         showToast(`Please enter a valid API key for ${provider} first.`, 'error');
         return;
@@ -731,7 +721,6 @@ async function testAndAutoSelectModel() {
                 modelInput.dispatchEvent(new Event('input', { bubbles: true }));
                 modelInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
-
             const success = await pingModel(provider, model, apiKey, baseUrl);
             if (success) {
                 appData.aiSettings.provider = provider;
@@ -739,9 +728,7 @@ async function testAndAutoSelectModel() {
                 appData.aiSettings.model = model;
                 saveData();
                 updateSettingsUI();
-
                 if (modelInput) modelInput.value = model;
-
                 showToast(`Success! Auto-selected lightweight model: ${model}`, 'success');
                 return;
             }
@@ -749,7 +736,6 @@ async function testAndAutoSelectModel() {
             console.warn(`Model ${model} failed ping test:`, err.message);
         }
     }
-
     showToast('All models failed for this provider. Check your API key or quota.', 'error');
 }
 
@@ -776,11 +762,7 @@ async function pingModel(provider, model, apiKey, baseUrl) {
             break;
         case 'anthropic':
             url = 'https://api.anthropic.com/v1/messages';
-            headers = {
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01',
-                'Content-Type': 'application/json'
-            };
+            headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' };
             body = { model: normalizedModel, max_tokens: 5, messages: [{ role: 'user', content: 'Hi' }] };
             break;
         case 'groq':
@@ -807,9 +789,7 @@ async function pingModel(provider, model, apiKey, baseUrl) {
     return res.ok;
 }
 
-function handlePngImport(e) {
-    // Stub for character card PNG import
-}
+function handlePngImport(e) { /* stub */ }
 
 // ==========================================
 // 11. Character rendering
@@ -1093,9 +1073,8 @@ async function callAIProviderWithFallback(character) {
     const settings = appData.aiSettings;
     let primaryError = null;
 
-    try {
-        return await callAIProvider(character, settings);
-    } catch (error) {
+    try { return await callAIProvider(character, settings); }
+    catch (error) {
         primaryError = error;
         console.warn(`Primary (${settings.provider}) failed:`, error.message);
     }
@@ -1114,7 +1093,6 @@ async function callAIProviderWithFallback(character) {
             throw new Error(`Primary failed: ${primaryError.message}. Fallback failed: ${fbErr.message}`);
         }
     }
-
     throw new Error(primaryError.message);
 }
 
@@ -1163,67 +1141,50 @@ Now answer the user's last message.`;
         topK: Number(settings.topK ?? 40),
         maxTokens: Number(settings.maxTokens ?? 1024)
     };
-
     const killThinking = settings.disableReasoning !== false;
 
     let url, headers, body;
-
     switch (settings.provider) {
         case 'openrouter':
             url = 'https://openrouter.ai/api/v1/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
             body = {
-                model,
-                messages: apiMessages,
-                temperature: gen.temperature,
-                top_p: gen.topP,
-                top_k: gen.topK,
+                model, messages: apiMessages,
+                temperature: gen.temperature, top_p: gen.topP, top_k: gen.topK,
                 max_tokens: gen.maxTokens,
                 frequency_penalty: Number(settings.frequencyPenalty ?? 0),
                 presence_penalty: Number(settings.presencePenalty ?? 0)
             };
-            if (killThinking) {
-                body.reasoning = { effort: 'none', exclude: true };
-            }
+            if (killThinking) body.reasoning = { effort: 'none', exclude: true };
             break;
-
         case 'gemini':
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
             headers = { 'Content-Type': 'application/json' };
             body = {
                 systemInstruction: { parts: [{ text: systemPrompt }] },
-                contents: apiMessages
-                    .filter(m => m.role !== 'system')
-                    .map(m => ({
-                        role: m.role === 'assistant' ? 'model' : 'user',
-                        parts: [{ text: m.content }]
-                    })),
+                contents: apiMessages.filter(m => m.role !== 'system').map(m => ({
+                    role: m.role === 'assistant' ? 'model' : 'user',
+                    parts: [{ text: m.content }]
+                })),
                 generationConfig: {
-                    temperature: gen.temperature,
-                    topP: gen.topP,
-                    topK: gen.topK,
-                    maxOutputTokens: gen.maxTokens
+                    temperature: gen.temperature, topP: gen.topP,
+                    topK: gen.topK, maxOutputTokens: gen.maxTokens
                 }
             };
             if (killThinking && (model.includes('gemini-2.5') || model.includes('gemini-3'))) {
                 body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
             }
             break;
-
         case 'openai':
             url = 'https://api.openai.com/v1/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
             body = {
-                model,
-                messages: apiMessages,
-                temperature: gen.temperature,
-                top_p: gen.topP,
-                max_tokens: gen.maxTokens,
+                model, messages: apiMessages,
+                temperature: gen.temperature, top_p: gen.topP, max_tokens: gen.maxTokens,
                 frequency_penalty: Number(settings.frequencyPenalty ?? 0),
                 presence_penalty: Number(settings.presencePenalty ?? 0)
             };
             break;
-
         case 'anthropic':
             url = 'https://api.anthropic.com/v1/messages';
             headers = {
@@ -1232,10 +1193,8 @@ Now answer the user's last message.`;
                 'Content-Type': 'application/json'
             };
             body = {
-                model,
-                max_tokens: gen.maxTokens,
-                temperature: gen.temperature,
-                top_p: gen.topP,
+                model, max_tokens: gen.maxTokens,
+                temperature: gen.temperature, top_p: gen.topP,
                 system: systemPrompt,
                 messages: apiMessages.filter(m => m.role !== 'system').map(m => ({
                     role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -1243,44 +1202,31 @@ Now answer the user's last message.`;
                 }))
             };
             break;
-
         case 'groq':
             url = 'https://api.groq.com/openai/v1/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
             body = {
-                model,
-                messages: apiMessages,
-                temperature: gen.temperature,
-                top_p: gen.topP,
-                max_tokens: gen.maxTokens
+                model, messages: apiMessages,
+                temperature: gen.temperature, top_p: gen.topP, max_tokens: gen.maxTokens
             };
             break;
-
         case 'ollama':
             url = (settings.baseUrl || 'http://localhost:11434') + '/v1/chat/completions';
             headers = { 'Content-Type': 'application/json' };
             body = {
-                model,
-                messages: apiMessages,
-                temperature: gen.temperature,
-                top_p: gen.topP,
-                top_k: gen.topK,
-                max_tokens: gen.maxTokens
+                model, messages: apiMessages,
+                temperature: gen.temperature, top_p: gen.topP,
+                top_k: gen.topK, max_tokens: gen.maxTokens
             };
             break;
-
         case 'custom':
             url = settings.baseUrl + '/chat/completions';
             headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
             body = {
-                model,
-                messages: apiMessages,
-                temperature: gen.temperature,
-                top_p: gen.topP,
-                max_tokens: gen.maxTokens
+                model, messages: apiMessages,
+                temperature: gen.temperature, top_p: gen.topP, max_tokens: gen.maxTokens
             };
             break;
-
         default: throw new Error('Unsupported provider');
     }
 
@@ -1289,7 +1235,6 @@ Now answer the user's last message.`;
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const apiMsg = err.error?.message || err.message || `HTTP ${res.status}`;
-
         if (settings.provider === 'gemini' && /quota|limit: 0|free_tier/i.test(apiMsg)) {
             throw new Error(`Gemini free tier exhausted for this project. Try a new Google Cloud project or switch to OpenRouter.`);
         }
@@ -1309,6 +1254,16 @@ Now answer the user's last message.`;
     } else {
         text = data.choices?.[0]?.message?.content || '';
     }
-
     return text;
 }
+
+// Test models map (kept for the Test button)
+const TEST_MODELS = {
+    openrouter: ['google/gemma-2-9b-it:free','meta-llama/llama-3.1-8b-instruct:free','mistralai/mistral-7b-instruct:free','deepseek/deepseek-r1:free'],
+    gemini: ['gemini-3.1-flash-lite','gemini-3.4-flash-lite','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.8-flash','gemma-2-9b-it'],
+    openai: ['gpt-4o-mini','gpt-3.5-turbo','gpt-4o','o1-mini','o3-mini'],
+    anthropic: ['claude-3-haiku-20240307','claude-3-5-haiku-latest','claude-3-5-sonnet-latest'],
+    groq: ['llama-3.1-8b-instant','mixtral-8x7b-32768','llama-3.3-70b-versatile'],
+    ollama: ['gemma2','llama3.2','mistral','llama3.3','deepseek-r1'],
+    custom: ['gpt-4o-mini']
+};
