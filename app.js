@@ -360,17 +360,30 @@ function escapeHtml(s) {
 }
 
 function updateModelDropdown(provider) {
-    const modelSelect = document.getElementById('model-select');
-    if (!modelSelect) return;
-    modelSelect.innerHTML = '';
+    const modelEl = document.getElementById('model-select');
+    if (!modelEl) return;
+
     const models = TEST_MODELS[provider] || TEST_MODELS.gemini;
-    models.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        if (m === appData.aiSettings.model) opt.selected = true;
-        modelSelect.appendChild(opt);
-    });
+    const currentModel = appData.aiSettings.model;
+
+    if (modelEl.tagName === 'SELECT') {
+        modelEl.innerHTML = '';
+        let availableModels = [...models];
+        if (currentModel && !availableModels.includes(currentModel)) {
+            availableModels.unshift(currentModel);
+        }
+
+        availableModels.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            modelEl.appendChild(opt);
+        });
+
+        modelEl.value = currentModel;
+    } else {
+        modelEl.value = currentModel;
+    }
 }
 
 function updateSettingsUI() {
@@ -464,7 +477,6 @@ async function testAndAutoSelectModel() {
             showToast(`Testing model: ${model}...`, 'info');
             const success = await pingModel(provider, model, apiKey, baseUrl);
             if (success) {
-                // Apply to app data and update dropdown textbox
                 appData.aiSettings.provider = provider;
                 appData.aiSettings.apiKey = apiKey;
                 appData.aiSettings.model = model;
@@ -486,7 +498,7 @@ async function pingModel(provider, model, apiKey, baseUrl) {
     const testMessages = [{ role: 'user', content: 'Hi' }];
     const normalizedModel = normalizeModelName(model, provider);
 
-    // Strictly separate providers using their own specific endpoint format and key
+    // Strictly separate providers using their own specific endpoints & keys
     switch (provider) {
         case 'openrouter':
             url = 'https://openrouter.ai/api/v1/chat/completions';
