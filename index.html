@@ -125,9 +125,7 @@
                     <small id="model-test-result"></small>
                 </div>
 
-                <!-- ==========================================
-                     AI PARAMETERS
-                     ========================================== -->
+                <!-- AI PARAMETERS -->
                 <div class="field">
                     <label>Temperature <span id="temperature-value">0.7</span></label>
                     <input type="range" id="temperature-slider" min="0" max="2" step="0.05" value="0.7">
@@ -136,7 +134,7 @@
                 <div class="field">
                     <label>Top P <span id="top-p-value">0.95</span></label>
                     <input type="range" id="top-p-slider" min="0" max="1" step="0.01" value="0.95">
-                    <small>Nucleus sampling — limits token pool.</small>
+                    <small>Nucleus sampling — limits the token pool.</small>
                 </div>
                 <div class="field">
                     <label>Top K <span id="top-k-value">40</span></label>
@@ -148,6 +146,16 @@
                     <input type="number" id="max-tokens-input" min="64" max="8192" step="64" value="1024">
                     <small>Maximum length of the reply.</small>
                 </div>
+
+                <!-- Disable AI reasoning -->
+                <div class="field row-between">
+                    <label>Disable AI reasoning</label>
+                    <label class="switch">
+                        <input type="checkbox" id="disable-reasoning-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <small style="margin-top:-8px;color:var(--text-3);">Forces direct answers. Works on Gemini 2.5+, OpenRouter reasoning models.</small>
 
                 <div class="field" id="base-url-group" style="display:none;">
                     <label>Base URL</label>
