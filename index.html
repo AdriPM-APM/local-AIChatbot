@@ -9,17 +9,20 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<!-- Ad Banner (Adsterra) -->
+    <!-- Ad Banner (Adsterra) -->
     <div id="ad-banner" class="ad-banner" role="complementary" aria-label="Advertisement">
-    <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
-    <div class="ad-inner">
-        <!-- Adsterra banner container -->
-        <div id="adsterra-slot"></div>
-
-        <!-- Fallback shown until Adsterra loads or if not configured -->
-        <span id="ad-fallback" class="ad-label">📢 Ad space — click to test</span>
+        <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
+        <div class="ad-inner">
+            <div id="adsterra-slot"></div>
+            <span id="ad-fallback" class="ad-label">📢 Ad space — click to test</span>
+        </div>
     </div>
-</div>
+
+    <!-- Popunder status pill (optional, so user knows popunder is active) -->
+    <div id="popunder-pill" class="popunder-pill" role="status" aria-live="polite">
+        <span>Popunder: <b id="popunder-state">ON</b></span>
+        <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder">Hide</button>
+    </div>
 
     <!-- Mobile top bar -->
     <header class="mobile-topbar">
@@ -167,13 +170,24 @@
                     <label>Base URL</label>
                     <input type="text" id="base-url-input" placeholder="https://api.example.com/v1">
                 </div>
+
+                <!-- ===== ADS SETTINGS ===== -->
                 <div class="field row-between">
-                    <label>Show ads</label>
+                    <label>Show banner ad</label>
                     <label class="switch">
                         <input type="checkbox" id="show-ads-toggle" checked>
                         <span class="slider"></span>
                     </label>
                 </div>
+                <div class="field row-between">
+                    <label>Show popunder ad</label>
+                    <label class="switch">
+                        <input type="checkbox" id="show-popunder-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <small style="margin-top:-8px;color:var(--text-3);">Both ads auto re-enable on every page load.</small>
+
                 <div class="modal-actions">
                     <button id="save-settings-btn" class="btn primary">Save</button>
                     <button id="clear-data-btn" class="btn danger">Clear all data</button>
@@ -240,6 +254,11 @@
     </div>
 
     <div id="toast-container" class="toast-container"></div>
+
+    <!-- =========================================================
+         POPUNDER (Adsterra) — loaded via app.js
+         We inject the script dynamically so we can hide/show it.
+         ========================================================= -->
 
     <script src="app.js"></script>
 </body>
