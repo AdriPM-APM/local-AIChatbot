@@ -1,3 +1,4 @@
+// app.js corregido y actualizado
 const chatsData = [
     {
         id: 1,
@@ -30,6 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderChatList();
     setupNavigation();
     setupChatInteractions();
+    loadSecureAd(); // Carga el anuncio protegido al iniciar la app
 });
 
 function renderChatList() {
@@ -61,6 +63,25 @@ function formatMessageText(text) {
     return text
         .replace(/\*\*(.*?)\*\*/g, '<strong>\$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>\$1</em>');
+}
+
+// Función para cargar el anuncio protegido desde la Serverless Function (/api/ad)
+async function loadSecureAd() {
+    const adContainer = document.getElementById("adContainer");
+    if (!adContainer) return;
+
+    try {
+        const response = await fetch('/api/ad');
+        if (!response.ok) throw new Error("Error al conectar con el servidor de anuncios");
+        
+        const data = await response.json();
+        if (data.success && data.content) {
+            adContainer.innerHTML = data.content;
+        }
+    } catch (error) {
+        console.error("No se pudo cargar el bloque de anuncios protegido:", error);
+        adContainer.innerHTML = `<div class="ad-placeholder"><p style="font-size:11px; color:#777;">Publicidad no disponible temporalmente</p></div>`;
+    }
 }
 
 function openChat(chatId) {
