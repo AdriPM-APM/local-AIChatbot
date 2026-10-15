@@ -9,14 +9,12 @@ let appData = {
         apiKey: '',
         model: 'gemini-2.0-flash',
         baseUrl: '',
-        // NEW: AI generation parameters
         temperature: 0.7,
         topP: 0.95,
         topK: 40,
         maxTokens: 1024,
         frequencyPenalty: 0.0,
-        presencePenalty: 0.0,
-        thinkingBudget: 0 // 0 = off for Gemini thinking models
+        presencePenalty: 0.0
     },
     adDismissed: false,
     characters: [],
@@ -55,7 +53,6 @@ function loadData() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            // Merge nested aiSettings so new defaults don't get lost
             if (parsed.aiSettings) {
                 appData.aiSettings = { ...appData.aiSettings, ...parsed.aiSettings };
             }
@@ -129,21 +126,21 @@ function normalizeModelName(model, provider) {
 }
 
 // ==========================================
-// 6. Aggressive sanitizer — strips ALL planning/meta
+// 6. Sanitizer — strips ALL planning/meta
 // ==========================================
 function cleanAIResponse(raw, characterName) {
     if (!raw) return '';
 
     let reply = raw;
 
-    // 0. Nuclear: drop any leading bulleted planning block ("* User asks:", "* Character:", etc.)
+    // 0. Drop leading bulleted planning block
     const lines = raw.split('\n');
     let firstRealIdx = -1;
     for (let i = 0; i < lines.length; i++) {
         const l = lines[i].trim();
         if (!l) continue;
         if (/^\*\s*[A-Za-z][A-Za-z\s/]+:\s*/.test(l)) continue;
-        if (/^\*?\s*(User asks|Character|Input context|Internal state|Motivation|Emotion|Direct response|Dialogue|Length|Format|Followed by|No meta-text|First person)\b/i.test(l)) continue;
+        if (/^\*?\s*(User asks|Character|Input context|Internal state|Motivation|Emotion|Direct response|Dialogue|Length|Format|Followed by|No meta-text|First person|THOUGHT)\b/i.test(l)) continue;
         firstRealIdx = i;
         break;
     }
@@ -151,7 +148,7 @@ function cleanAIResponse(raw, characterName) {
         reply = lines.slice(firstRealIdx).join('\n');
     }
 
-    // 1. Remove [REASONING]...[/REASONING] blocks entirely
+    // 1. Remove [REASONING] blocks
     reply = reply.replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/gi, '');
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
@@ -187,17 +184,17 @@ function cleanAIResponse(raw, characterName) {
         reply = reply.replace(new RegExp(`^\\s*\\*?\\s*${esc}\\s*\\*?\\s*:\\s*`, 'i'), '');
     }
 
-    // 5. Cut off trailing meta block
+    // 5. Cut off trailing meta
     const trailing = reply.search(/\n\s*\*?\s*(reasoning|analysis|thoughts?|note|ooc|end of response|format)\s*[:\-]/i);
     if (trailing !== -1) reply = reply.slice(0, trailing);
 
-    // 6. Remove "THOUGHT:" prefix (Gemini thought leaks)
+    // 6. Remove THOUGHT: prefix
     reply = reply.replace(/^\s*THOUGHT\s*:\s*[\s\S]*?(?=\n\n|$)/i, '');
 
     // 7. Collapse blank lines
     reply = reply.replace(/\n{3,}/g, '\n\n').trim();
 
-    // 8. If empty, salvage a spoken line
+    // 8. Salvage fallback
     if (!reply) {
         const fallback = raw.split('\n').map(l => l.trim()).filter(Boolean);
         const spoken = fallback.reverse().find(l => /^["*]/.test(l) && !/^\*\s*\w+\s*:/.test(l));
@@ -213,6 +210,7 @@ function cleanAIResponse(raw, characterName) {
 function renderAdBanner() {
     const banner = document.getElementById('ad-banner');
     const toggle = document.getElementById('show-ads-toggle');
+    if (!banner || !toggle) return;
     if (appData.adDismissed) {
         banner.classList.add('hidden');
         toggle.checked = false;
@@ -232,23 +230,23 @@ function dismissAd() {
 // 8. Event listeners
 // ==========================================
 function setupEventListeners() {
-    document.getElementById('close-ad').addEventListener('click', dismissAd);
+    document.getElementById('close-ad')?.addEventListener('click', dismissAd);
 
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
     const openDrawer = () => { sidebar.classList.add('open'); overlay.classList.remove('hidden'); };
     const closeDrawer = () => { sidebar.classList.remove('open'); overlay.classList.add('hidden'); };
 
-    document.getElementById('mobile-menu-btn').addEventListener('click', openDrawer);
-    document.getElementById('mobile-settings-btn').addEventListener('click', () => openModal('settings-modal'));
-    overlay.addEventListener('click', closeDrawer);
+    document.getElementById('mobile-menu-btn')?.addEventListener('click', openDrawer);
+    document.getElementById('mobile-settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
+    overlay?.addEventListener('click', closeDrawer);
 
-    document.getElementById('add-char-btn').addEventListener('click', () => openModal('character-modal'));
-    document.getElementById('settings-btn').addEventListener('click', () => openModal('settings-modal'));
-    document.getElementById('send-btn').addEventListener('click', sendMessage);
-    document.getElementById('clear-chat-btn').addEventListener('click', clearCurrentChat);
+    document.getElementById('add-char-btn')?.addEventListener('click', () => openModal('character-modal'));
+    document.getElementById('settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
+    document.getElementById('send-btn')?.addEventListener('click', sendMessage);
+    document.getElementById('clear-chat-btn')?.addEventListener('click', clearCurrentChat);
 
-    document.getElementById('message-input').addEventListener('keydown', (e) => {
+    document.getElementById('message-input')?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
@@ -256,7 +254,7 @@ function setupEventListeners() {
     });
 
     const ta = document.getElementById('message-input');
-    ta.addEventListener('input', () => {
+    ta?.addEventListener('input', () => {
         ta.style.height = 'auto';
         ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
     });
@@ -270,48 +268,49 @@ function setupEventListeners() {
         });
     });
 
-    document.getElementById('provider-select').addEventListener('change', (e) => {
+    document.getElementById('provider-select')?.addEventListener('change', (e) => {
         document.getElementById('base-url-group').style.display = e.target.value === 'custom' ? 'flex' : 'none';
     });
-    document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
-    document.getElementById('clear-data-btn').addEventListener('click', clearAllData);
-    document.getElementById('test-models-btn').addEventListener('click', testAndAutoSelectModel);
-    document.getElementById('show-ads-toggle').addEventListener('change', (e) => {
+    document.getElementById('save-settings-btn')?.addEventListener('click', saveSettings);
+    document.getElementById('clear-data-btn')?.addEventListener('click', clearAllData);
+    document.getElementById('test-models-btn')?.addEventListener('click', testAndAutoSelectModel);
+    document.getElementById('show-ads-toggle')?.addEventListener('change', (e) => {
         appData.adDismissed = !e.target.checked;
         saveData();
         renderAdBanner();
     });
 
-    // NEW: Parameter sliders
-    document.getElementById('temperature-slider').addEventListener('input', (e) => {
+    // Parameter sliders
+    document.getElementById('temperature-slider')?.addEventListener('input', (e) => {
         document.getElementById('temperature-value').textContent = e.target.value;
     });
-    document.getElementById('top-p-slider').addEventListener('input', (e) => {
+    document.getElementById('top-p-slider')?.addEventListener('input', (e) => {
         document.getElementById('top-p-value').textContent = e.target.value;
     });
-    document.getElementById('top-k-slider').addEventListener('input', (e) => {
+    document.getElementById('top-k-slider')?.addEventListener('input', (e) => {
         document.getElementById('top-k-value').textContent = e.target.value;
     });
-    document.getElementById('max-tokens-input').addEventListener('input', (e) => {
+    document.getElementById('max-tokens-input')?.addEventListener('input', (e) => {
         document.getElementById('max-tokens-value').textContent = e.target.value;
     });
 
-    document.getElementById('save-char-btn').addEventListener('click', saveCharacter);
-    document.getElementById('import-png').addEventListener('change', handlePngImport);
+    document.getElementById('save-char-btn')?.addEventListener('click', saveCharacter);
+    document.getElementById('import-png')?.addEventListener('change', handlePngImport);
 
-    document.getElementById('search-input').addEventListener('input', (e) => {
+    document.getElementById('search-input')?.addEventListener('input', (e) => {
         renderCharacterList(e.target.value);
     });
 }
 
-function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
 
 // ==========================================
 // 9. Toast
 // ==========================================
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
     const icons = { info: 'ℹ️', error: '⚠️', success: '✅' };
@@ -335,6 +334,7 @@ function escapeHtml(s) {
 // ==========================================
 async function renderCharacterList(searchTerm = '') {
     const list = document.getElementById('character-list');
+    if (!list) return;
     list.innerHTML = '';
 
     const term = searchTerm.toLowerCase();
@@ -444,7 +444,10 @@ function saveCharacter() {
     saveData();
     closeModal('character-modal');
 
-    ['char-name', 'char-intro', 'char-greetings', 'char-backstory', 'char-tags'].forEach(id => document.getElementById(id).value = '');
+    ['char-name', 'char-intro', 'char-greetings', 'char-backstory', 'char-tags'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
     document.getElementById('char-avatar').value = '';
     document.getElementById('char-private').checked = false;
 
@@ -458,6 +461,7 @@ function saveCharacter() {
 // ==========================================
 function renderChat() {
     const container = document.getElementById('messages-container');
+    if (!container) return;
     container.innerHTML = '';
 
     if (!currentCharacterId) return;
@@ -626,7 +630,6 @@ async function callAIProvider(character, settings) {
     const model = normalizeModelName(settings.model, settings.provider);
     const messages = appData.chats[currentCharacterId] || [];
 
-    // STRICT PROMPT — no reasoning, no meta, just the character speaking.
     const systemPrompt = `You are roleplaying as ${character.name}. Gender: ${character.gender}.
 
 BACKSTORY (defines who you are — never reveal directly):
@@ -639,7 +642,7 @@ ABSOLUTE RULES — VIOLATING ANY OF THESE BREAKS THE ROLEPLAY:
 1. Your entire response MUST be ${character.name}'s in-character reply — nothing else.
 2. Write ONLY in first person as ${character.name}.
 3. Actions go in *single asterisks* on the same line. Example: *He looks down.* I-I'm fine...
-4. NEVER output any of the following, under any circumstance:
+4. NEVER output any of the following:
    - planning notes, "User asks:", "Character:", "Input context:"
    - "Internal state:", "Motivation:", "Emotion:"
    - "Direct response:", "Dialogue/Action:", "Length:"
@@ -649,22 +652,21 @@ ABSOLUTE RULES — VIOLATING ANY OF THESE BREAKS THE ROLEPLAY:
    - any numbered or bulleted list
    - any line that starts with "* Word:" where Word is a label
 5. NEVER write the user's words, thoughts, or actions.
-6. NEVER describe yourself in third person. No "${character.name} does X" — only "I do X".
+6. NEVER describe yourself in third person. Only "I do X".
 7. NEVER mention that you are an AI, an assistant, or a language model.
 8. Length: 1 to 4 sentences. Natural, conversational, in character.
 9. Show personality through the way you speak — stutters, hesitations, tone, brief actions.
 
-EXAMPLE of a valid reply (structure only — do not reuse content):
+EXAMPLE of a valid reply (structure only):
 *I flinch and look away.* I-I'm fine... really. It's nothing.
 
-Now write your reply. Begin with either a *action* or a spoken word. Do NOT prefix it with any label. Do NOT write anything before it. Just the reply.`;
+Now write your reply. Begin with either a *action* or a spoken word. No labels before it. Just the reply.`;
 
     const apiMessages = [
         { role: 'system', content: systemPrompt },
         ...messages.map(m => ({ role: m.role, content: m.content }))
     ];
 
-    // NEW: Build generation config from settings
     const gen = {
         temperature: Number(settings.temperature ?? 0.7),
         topP: Number(settings.topP ?? 0.95),
@@ -688,13 +690,11 @@ Now write your reply. Begin with either a *action* or a spoken word. Do NOT pref
                 frequency_penalty: Number(settings.frequencyPenalty ?? 0),
                 presence_penalty: Number(settings.presencePenalty ?? 0)
             };
-            // For Gemini 2.5+ on OpenRouter: disable thinking to prevent leakage
             if (model.includes('gemini') && !model.includes('lite')) {
                 body.reasoning = { effort: 'none' };
             }
             break;
 
-        // Gemini native API
         case 'gemini':
             url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
             headers = { 'Content-Type': 'application/json' };
@@ -715,7 +715,6 @@ Now write your reply. Begin with either a *action* or a spoken word. Do NOT pref
                     maxOutputTokens: gen.maxTokens
                 }
             };
-            // Disable thinking for Gemini 2.5+ models to prevent leaked THOUGHT: blocks
             if (model.includes('gemini-2.5') || model.includes('gemini-3')) {
                 body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
             }
@@ -847,4 +846,234 @@ async function testAndAutoSelectModel() {
                 const avail = (ld.models || [])
                     .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
                     .map(m => m.name.replace(/^models\//, ''));
-                if (avail.length) candidates
+                if (avail.length) candidates = avail;
+            }
+        } catch (_) {}
+    }
+
+    let working = null;
+    let lastError = '';
+
+    for (const raw of candidates) {
+        const model = normalizeModelName(raw, provider);
+        resultEl.textContent = `Testing ${model}…`;
+        try {
+            const payload = buildTestPayload(provider, model, apiKey, baseUrl);
+            const res = await fetch(payload.url, { method: 'POST', headers: payload.headers, body: JSON.stringify(payload.body) });
+            if (res.ok) { working = model; break; }
+            const err = await res.json().catch(() => ({}));
+            lastError = err.error?.message || `HTTP ${res.status}`;
+        } catch (e) {
+            lastError = e.message;
+        }
+    }
+
+    if (working) {
+        document.getElementById('model-input').value = working;
+        resultEl.textContent = `✅ Working: ${working}`;
+        resultEl.style.color = 'var(--success)';
+        showToast(`Selected ${working}`, 'success');
+    } else {
+        resultEl.textContent = `❌ No working model. ${lastError}`;
+        resultEl.style.color = 'var(--danger)';
+        showToast(lastError || 'No working model found', 'error');
+    }
+}
+
+function buildTestPayload(provider, model, apiKey, baseUrl) {
+    const prompt = [{ role: 'user', content: 'Hi' }];
+    switch (provider) {
+        case 'gemini':
+            return {
+                url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                headers: { 'Content-Type': 'application/json' },
+                body: { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] }
+            };
+        case 'anthropic':
+            return {
+                url: 'https://api.anthropic.com/v1/messages',
+                headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+                body: { model, max_tokens: 10, messages: prompt }
+            };
+        case 'ollama':
+            return {
+                url: (baseUrl || 'http://localhost:11434') + '/v1/chat/completions',
+                headers: { 'Content-Type': 'application/json' },
+                body: { model, messages: prompt }
+            };
+        case 'custom':
+            return {
+                url: baseUrl + '/chat/completions',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: { model, messages: prompt }
+            };
+        case 'openrouter':
+            return {
+                url: 'https://openrouter.ai/api/v1/chat/completions',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: { model, messages: prompt }
+            };
+        case 'openai':
+            return {
+                url: 'https://api.openai.com/v1/chat/completions',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: { model, messages: prompt }
+            };
+        case 'groq':
+            return {
+                url: 'https://api.groq.com/openai/v1/chat/completions',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: { model, messages: prompt }
+            };
+    }
+    throw new Error('Unknown provider');
+}
+
+// ==========================================
+// 16. Settings
+// ==========================================
+function saveSettings() {
+    appData.aiSettings = {
+        provider: document.getElementById('provider-select').value,
+        apiKey: document.getElementById('api-key-input').value.trim(),
+        model: document.getElementById('model-input').value.trim(),
+        baseUrl: document.getElementById('base-url-input').value.trim(),
+        temperature: parseFloat(document.getElementById('temperature-slider')?.value ?? 0.7),
+        topP: parseFloat(document.getElementById('top-p-slider')?.value ?? 0.95),
+        topK: parseInt(document.getElementById('top-k-slider')?.value ?? 40, 10),
+        maxTokens: parseInt(document.getElementById('max-tokens-input')?.value ?? 1024, 10),
+        frequencyPenalty: Number(appData.aiSettings.frequencyPenalty ?? 0),
+        presencePenalty: Number(appData.aiSettings.presencePenalty ?? 0)
+    };
+    saveData();
+    closeModal('settings-modal');
+    showToast('Settings saved', 'success');
+}
+
+function updateSettingsUI() {
+    const s = appData.aiSettings;
+    document.getElementById('provider-select').value = s.provider || 'gemini';
+    document.getElementById('api-key-input').value = s.apiKey || '';
+    document.getElementById('model-input').value = s.model || '';
+    document.getElementById('base-url-input').value = s.baseUrl || '';
+    document.getElementById('base-url-group').style.display = s.provider === 'custom' ? 'flex' : 'none';
+
+    // Populate parameter controls if present
+    const t = document.getElementById('temperature-slider');
+    if (t) { t.value = s.temperature ?? 0.7; document.getElementById('temperature-value').textContent = t.value; }
+
+    const tp = document.getElementById('top-p-slider');
+    if (tp) { tp.value = s.topP ?? 0.95; document.getElementById('top-p-value').textContent = tp.value; }
+
+    const tk = document.getElementById('top-k-slider');
+    if (tk) { tk.value = s.topK ?? 40; document.getElementById('top-k-value').textContent = tk.value; }
+
+    const mt = document.getElementById('max-tokens-input');
+    if (mt) { mt.value = s.maxTokens ?? 1024; document.getElementById('max-tokens-value').textContent = mt.value; }
+}
+
+function clearAllData() {
+    if (!confirm('Delete ALL characters, chats, and settings?')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => {
+        showToast('All data cleared', 'success');
+        setTimeout(() => location.reload(), 700);
+    };
+    req.onerror = () => showToast('Failed to clear database', 'error');
+}
+
+// ==========================================
+// 17. Chai PNG import
+// ==========================================
+async function handlePngImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        const meta = parsePngMetadata(bytes);
+
+        if (!meta.chara && !meta.chai) throw new Error('No character data in PNG');
+
+        let charData;
+        try {
+            charData = JSON.parse(atob(meta.chara || meta.chai));
+        } catch {
+            throw new Error('Invalid character data');
+        }
+
+        const name = charData.name || charData.char_name || 'Imported Character';
+        const intro = charData.description || charData.personality || 'Imported from Chai';
+        const greetings = charData.first_mes || charData.greeting || `Hello! I'm ${name}.`;
+        const backstory = charData.scenario || charData.description || '';
+
+        const newChar = {
+            id: Date.now().toString(),
+            name,
+            gender: charData.gender || 'Other',
+            intro,
+            greetings,
+            backstory,
+            privateOnly: false,
+            tags: ['imported', 'chai'],
+            createdAt: new Date().toISOString(),
+            avatarId: null
+        };
+        newChar.avatarId = newChar.id;
+        await saveAvatar(newChar.id, file);
+        appData.characters.push(newChar);
+        appData.chats[newChar.id] = [{ role: 'assistant', content: greetings, ts: Date.now() }];
+        saveData();
+        closeModal('character-modal');
+        renderCharacterList();
+        showToast(`Imported ${name}`, 'success');
+        selectCharacter(newChar.id);
+    } catch (err) {
+        console.error('PNG import error:', err);
+        showToast(`Import failed: ${err.message}`, 'error');
+    }
+    event.target.value = '';
+}
+
+function parsePngMetadata(bytes) {
+    const meta = {};
+    let off = 8;
+    while (off < bytes.length) {
+        const len = (bytes[off] << 24) | (bytes[off + 1] << 16) | (bytes[off + 2] << 8) | bytes[off + 3];
+        off += 4;
+        const type = String.fromCharCode(bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]);
+        off += 4;
+        if (type === 'tEXt' || type === 'iTXt') {
+            const chunk = bytes.slice(off, off + len);
+            const i1 = chunk.indexOf(0);
+            if (i1 !== -1) {
+                const key = String.fromCharCode(...chunk.slice(0, i1));
+                const rest = chunk.slice(i1 + 1);
+                if (type === 'tEXt') {
+                    meta[key] = String.fromCharCode(...rest);
+                } else {
+                    const i2 = rest.indexOf(0);
+                    if (i2 !== -1) {
+                        const r2 = rest.slice(i2 + 1);
+                        const i3 = r2.indexOf(0);
+                        if (i3 !== -1) {
+                            const r3 = r2.slice(i3 + 1);
+                            const i4 = r3.indexOf(0);
+                            if (i4 !== -1) {
+                                const r4 = r3.slice(i4 + 1);
+                                const i5 = r4.indexOf(0);
+                                if (i5 !== -1) {
+                                    meta[key] = String.fromCharCode(...r4.slice(i5 + 1));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        off += len + 4;
+        if (type === 'IEND') break;
+    }
+    return meta;
+}
