@@ -1,183 +1,321 @@
-// app.js corregido y actualizado
-const chatsData = [
-    {
-        id: 1,
-        name: "FPE",
-        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-        preview: "*Plays funny track...* Hola, ¿qué tal?",
-        time: "14:14",
-        messages: [
-            { sender: "ai", text: "*Plays funny track...* Hola, ¿qué tal?" },
-            { sender: "user", text: "Hola **FPE**, todo bien por aquí." },
-            { sender: "ai", text: "Me alegra **mucho** escuchar eso. ¿En qué te *puedo ayudar* hoy?" }
-        ]
-    },
-    {
-        id: 2,
-        name: "MHA FUTURE GEN",
-        avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-        preview: "**With the defeat of All For One, Tomura Shigaraki...**",
-        time: "Ayer",
-        messages: [
-            { sender: "ai", text: "**With the defeat of All For One, Tomura Shigaraki** ha desaparecido." },
-            { sender: "user", text: "¿Cuál es el *siguiente paso* en la academia?" }
-        ]
-    }
-];
+// ==========================================
+// 1. Storage & Constants
+// ==========================================
+const STORAGE_KEY = 'aiCharacterAppData';
+let appData = {
+    aiSettings: { provider: 'openrouter', apiKey: '', model: 'google/gemma-2-9b-it:free', baseUrl: '' },
+    adDismissed: false,
+    characters: [],
+    chats: {}
+};
 
-let currentChatId = null;
+let currentCharacterId = null;
+let isGenerating = false;
 
-document.addEventListener("DOMContentLoaded", () => {
-    renderChatList();
-    setupNavigation();
-    setupChatInteractions();
-    loadSecureAd(); // Carga el anuncio protegido al iniciar la app
+// Initialize App
+document.addEventListener('DOMContentLoaded', async () => {
+    loadData();
+    renderAdBanner();
+    renderCharacterList();
+    setupEventListeners();
+    updateSettingsUI();
 });
 
-function renderChatList() {
-    const chatListEl = document.getElementById("chatList");
-    chatListEl.innerHTML = "";
-    
-    chatsData.forEach(chat => {
-        const item = document.createElement("div");
-        item.className = "chat-item";
-        item.onclick = () => openChat(chat.id);
-        
-        item.innerHTML = `
-            <img src="${chat.avatar}" alt="${chat.name}" class="avatar-md">
-            <div class="chat-info">
-                <h4>${chat.name}</h4>
-                <p>${formatTextPreview(chat.preview)}</p>
-            </div>
-            <span class="chat-meta">${chat.time}</span>
-        `;
-        chatListEl.appendChild(item);
-    });
-}
-
-function formatTextPreview(text) {
-    return text.replace(/\*\*(.*?)\*\*/g, '\$1').replace(/\*(.*?)\*/g, '\$1');
-}
-
-function formatMessageText(text) {
-    return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong>\$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>\$1</em>');
-}
-
-// Función para cargar el anuncio protegido desde la Serverless Function (/api/ad)
-async function loadSecureAd() {
-    const adContainer = document.getElementById("adContainer");
-    if (!adContainer) return;
-
-    try {
-        const response = await fetch('/api/ad');
-        if (!response.ok) throw new Error("Error al conectar con el servidor de anuncios");
-        
-        const data = await response.json();
-        if (data.success && data.content) {
-            adContainer.innerHTML = data.content;
+// ==========================================
+// 2. Data Management (localStorage + IndexedDB)
+// ==========================================
+function loadData() {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+        try {
+            const parsed = JSON.parse(stored);
+            appData = { ...appData, ...parsed };
+        } catch (e) {
+            console.error("Failed to parse stored data", e);
         }
-    } catch (error) {
-        console.error("No se pudo cargar el bloque de anuncios protegido:", error);
-        adContainer.innerHTML = `<div class="ad-placeholder"><p style="font-size:11px; color:#777;">Publicidad no disponible temporalmente</p></div>`;
     }
 }
 
-function openChat(chatId) {
-    currentChatId = chatId;
-    const chat = chatsData.find(c => c.id === chatId);
-    if (!chat) return;
-
-    document.getElementById("currentName").innerText = chat.name;
-    document.getElementById("currentAvatar").src = chat.avatar;
-
-    document.getElementById("homeView").classList.remove("active");
-    document.getElementById("exploreView").classList.remove("active");
-    document.getElementById("profileView").classList.remove("active");
-    document.getElementById("chatView").style.display = "flex";
-    document.getElementById("chatView").classList.add("active");
-
-    renderMessages(chat.messages);
+function saveData() {
+    // Save everything except avatars to localStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
 }
 
-function renderMessages(messages) {
-    const container = document.getElementById("chatMessages");
-    container.innerHTML = "";
+// IndexedDB for Avatars
+const DB_NAME = 'CharacterAvatarsDB';
+const STORE_NAME = 'avatars';
 
-    messages.forEach(msg => {
-        const msgEl = document.createElement("div");
-        msgEl.className = `message ${msg.sender}`;
-        msgEl.innerHTML = formatMessageText(msg.text);
-        container.appendChild(msgEl);
-    });
-
-    container.scrollTop = container.scrollHeight;
-}
-
-function setupChatInteractions() {
-    const backBtn = document.getElementById("backBtn");
-    backBtn.onclick = () => {
-        document.getElementById("chatView").style.display = "none";
-        document.getElementById("chatView").classList.remove("active");
-        document.getElementById("homeView").classList.add("active");
-        currentChatId = null;
-    };
-
-    const sendBtn = document.getElementById("sendBtn");
-    const messageInput = document.getElementById("messageInput");
-
-    const handleSend = () => {
-        const text = messageInput.value.trim();
-        if (!text || currentChatId === null) return;
-
-        const chat = chatsData.find(c => c.id === currentChatId);
-        if (!chat) return;
-
-        chat.messages.push({ sender: "user", text });
-        messageInput.value = "";
-        renderMessages(chat.messages);
-
-        setTimeout(() => {
-            chat.messages.push({ 
-                sender: "ai", 
-                text: `Entendido. Dijiste: *"${text}"*. ¿Hay algo más en lo que te *pueda ayudar* hoy?` 
-            });
-            renderMessages(chat.messages);
-        }, 1000);
-    };
-
-    sendBtn.onclick = handleSend;
-    messageInput.onkeypress = (e) => {
-        if (e.key === "Enter") handleSend();
-    };
-}
-
-function setupNavigation() {
-    const navItems = document.querySelectorAll(".bottom-nav .nav-item");
-    navItems.forEach(item => {
-        const target = item.getAttribute("data-target");
-        if (!target) return;
-
-        item.onclick = () => {
-            navItems.forEach(nav => nav.classList.remove("active"));
-            item.classList.add("active");
-
-            document.getElementById("homeView").classList.remove("active");
-            document.getElementById("chatView").style.display = "none";
-            document.getElementById("chatView").classList.remove("active");
-            document.getElementById("exploreView").classList.remove("active");
-            document.getElementById("profileView").classList.remove("active");
-
-            if (target === "homeView" || target === "chatListTab") {
-                document.getElementById("homeView").classList.add("active");
-            } else if (target === "exploreView") {
-                document.getElementById("exploreView").classList.add("active");
-            } else if (target === "profileView") {
-                document.getElementById("profileView").classList.add("active");
-            } else if (target === "createView") {
-                alert("Crear nuevo personaje / chat (Próximamente)");
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME);
             }
         };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
     });
 }
+
+async function saveAvatar(id, file) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.put(file, id);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function getAvatar(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function deleteAvatar(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.delete(id);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// ==========================================
+// 3. Ad Banner Logic
+// ==========================================
+function renderAdBanner() {
+    const banner = document.getElementById('ad-banner');
+    if (appData.adDismissed) {
+        banner.classList.add('hidden');
+        document.getElementById('show-ads-toggle').checked = false;
+    } else {
+        banner.classList.remove('hidden');
+        document.getElementById('show-ads-toggle').checked = true;
+    }
+}
+
+function dismissAd() {
+    appData.adDismissed = true;
+    saveData();
+    renderAdBanner();
+}
+
+// ==========================================
+// 4. UI Rendering & Event Listeners
+// ==========================================
+function setupEventListeners() {
+    // Ad Banner
+    document.getElementById('close-ad').addEventListener('click', dismissAd);
+    
+    // Sidebar & Chat
+    document.getElementById('add-char-btn').addEventListener('click', () => openModal('character-modal'));
+    document.getElementById('settings-btn').addEventListener('click', () => openModal('settings-modal'));
+    document.getElementById('send-btn').addEventListener('click', sendMessage);
+    document.getElementById('message-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    document.getElementById('clear-chat-btn').addEventListener('click', clearCurrentChat);
+
+    // Modals
+    document.querySelectorAll('.close-modal-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const modalId = e.target.getAttribute('data-modal');
+            closeModal(modalId);
+        });
+    });
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal(overlay.id);
+        });
+    });
+
+    // Settings Modal
+    document.getElementById('provider-select').addEventListener('change', (e) => {
+        const baseUrlGroup = document.getElementById('base-url-group');
+        baseUrlGroup.style.display = e.target.value === 'custom' ? 'block' : 'none';
+    });
+    document.getElementById('save-settings-btn').addEventListener('click', saveSettings);
+    document.getElementById('clear-data-btn').addEventListener('click', clearAllData);
+    document.getElementById('show-ads-toggle').addEventListener('change', (e) => {
+        appData.adDismissed = !e.target.checked;
+        saveData();
+        renderAdBanner();
+    });
+
+    // Character Creation Modal
+    document.getElementById('save-char-btn').addEventListener('click', saveCharacter);
+    document.getElementById('import-png').addEventListener('change', handlePngImport);
+    
+    // Search
+    document.getElementById('search-input').addEventListener('input', (e) => {
+        renderCharacterList(e.target.value);
+    });
+}
+
+function openModal(id) {
+    document.getElementById(id).classList.remove('hidden');
+}
+
+function closeModal(id) {
+    document.getElementById(id).classList.add('hidden');
+}
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ==========================================
+// 5. Character Management
+// ==========================================
+async function renderCharacterList(searchTerm = '') {
+    const list = document.getElementById('character-list');
+    list.innerHTML = '';
+    
+    const filtered = appData.characters.filter(c => 
+        c.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    for (const char of filtered) {
+        const card = document.createElement('div');
+        card.className = `character-card ${char.id === currentCharacterId ? 'active' : ''}`;
+        
+        let avatarSrc = '';
+        if (char.avatarId) {
+            const blob = await getAvatar(char.avatarId);
+            if (blob) avatarSrc = URL.createObjectURL(blob);
+        }
+
+        card.innerHTML = `
+            <img src="${avatarSrc || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0NCIgaGVpZ2h0PSI0NCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5NGEzYjgiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjAgMjF2LTJhNCA0IDAgMCAwLTQtNEg4YTQgNCAwIDAgMC00IDR2MiI+PC9wYXRoPjxjaXJjbGUgY3g9IjEyIiBjeT0iNyIgcj0iNCI+PC9jaXJjbGU+PC9zdmc+'}" alt="${char.name}">
+            <div class="char-details">
+                <h3>${char.name}</h3>
+                <p>${char.intro || 'No description'}</p>
+            </div>
+        `;
+        
+        card.addEventListener('click', () => selectCharacter(char.id));
+        list.appendChild(card);
+    }
+}
+
+async function selectCharacter(id) {
+    currentCharacterId = id;
+    renderCharacterList(document.getElementById('search-input').value);
+    const char = appData.characters.find(c => c.id === id);
+    
+    if (!char) return;
+
+    // Update Header
+    document.getElementById('chat-name').textContent = char.name;
+    const avatarImg = document.getElementById('chat-avatar');
+    if (char.avatarId) {
+        const blob = await getAvatar(char.avatarId);
+        if (blob) {
+            avatarImg.src = URL.createObjectURL(blob);
+            avatarImg.classList.remove('hidden');
+        }
+    } else {
+        avatarImg.classList.add('hidden');
+    }
+
+    // Enable input
+    document.getElementById('message-input').disabled = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('clear-chat-btn').classList.remove('hidden');
+
+    // Load chat
+    renderChat();
+}
+
+function saveCharacter() {
+    const name = document.getElementById('char-name').value.trim();
+    if (!name) return showToast('Name is required', 'error');
+
+    const newChar = {
+        id: Date.now().toString(),
+        name: name,
+        gender: document.getElementById('char-gender').value,
+        intro: document.getElementById('char-intro').value.trim(),
+        greetings: document.getElementById('char-greetings').value.trim(),
+        backstory: document.getElementById('char-backstory').value.trim(),
+        privateOnly: document.getElementById('char-private').checked,
+        tags: document.getElementById('char-tags').value.split(',').map(t => t.trim()).filter(t => t),
+        createdAt: new Date().toISOString(),
+        avatarId: null
+    };
+
+    const avatarFile = document.getElementById('char-avatar').files[0];
+    if (avatarFile) {
+        newChar.avatarId = newChar.id;
+        saveAvatar(newChar.id, avatarFile).catch(console.error);
+    }
+
+    appData.characters.push(newChar);
+    appData.chats[newChar.id] = [];
+    
+    // Add greeting as first message
+    if (newChar.greetings) {
+        appData.chats[newChar.id].push({
+            role: 'assistant',
+            content: newChar.greetings,
+            ts: Date.now()
+        });
+    }
+
+    saveData();
+    closeModal('character-modal');
+    document.getElementById('char-name').value = '';
+    document.getElementById('char-intro').value = '';
+    document.getElementById('char-greetings').value = '';
+    document.getElementById('char-backstory').value = '';
+    document.getElementById('char-avatar').value = '';
+    
+    renderCharacterList();
+    showToast(`✨ Character "${newChar.name}" created!`, 'success');
+    selectCharacter(newChar.id);
+}
+
+// ==========================================
+// 6. Chat Engine
+// ==========================================
+function renderChat() {
+    const container = document.getElementById('messages-container');
+    container.innerHTML = '';
+    
+    if (!currentCharacterId) return;
+
+    const messages = appData.chats[currentCharacterId] || [];
+    
+    if (messages.length === 0) {
+        container.innerHTML = '<div class="empty-state">Send a message to start the conversation.</div>';
+        return;
+    }
+
+    messages.forEach(msg => {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${msg.role}`;
+        msgDiv.textContent = msg.content;
+       
