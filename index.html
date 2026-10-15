@@ -9,19 +9,13 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- ============ TOP AD BANNER (less intrusive, easy to close) ============ -->
+    <!-- ============ TOP AD BANNER ============ -->
     <div id="ad-banner" class="ad-banner" role="complementary" aria-label="Advertisement">
         <div class="ad-inner">
             <div id="container-a3f099d87b664187036e6176973d0255"></div>
             <span id="ad-fallback" class="ad-label">📢 Sponsored</span>
         </div>
         <button id="close-ad" class="ad-close" aria-label="Close ad" type="button">✕</button>
-    </div>
-
-    <!-- Popunder status pill — top-left, never blocks composer -->
-    <div id="popunder-pill" class="popunder-pill hidden" role="status" aria-live="polite">
-        <span>Popunder: <b id="popunder-state">ON</b></span>
-        <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder" type="button">Hide</button>
     </div>
 
     <!-- Mobile top bar -->
@@ -58,16 +52,26 @@
 
             <div id="character-list" class="character-list"></div>
 
-            <!-- ============ SIDEBAR AD (300x250) — always for money ============ -->
+            <!-- ============ SIDEBAR AD (300x250) ============ -->
             <div id="sidebar-ad" class="sidebar-ad">
-                <button id="sidebar-ad-close" class="sidebar-ad-close" aria-label="Close ad" type="button">✕</button>
+                <!-- Header strip ALWAYS above the ad iframe, contains the ✕ -->
+                <div class="sidebar-ad-bar">
+                    <span class="sidebar-ad-tag">Sponsored</span>
+                    <button id="sidebar-ad-close" class="sidebar-ad-close" aria-label="Close ad" type="button">✕</button>
+                </div>
                 <div class="sidebar-ad-inner">
                     <div id="sidebar-ad-slot"></div>
-                    <span id="sidebar-ad-fallback" class="sidebar-ad-label">📢 Sponsored</span>
+                    <span id="sidebar-ad-fallback" class="sidebar-ad-label">📢 Ad space</span>
                 </div>
             </div>
 
             <div class="sidebar-footer">
+                <!-- Popunder status pill -->
+                <div id="popunder-pill" class="popunder-pill hidden" role="status" aria-live="polite">
+                    <span>Popunder: <b id="popunder-state">ON</b></span>
+                    <button id="popunder-hide" class="popunder-hide" aria-label="Hide popunder" type="button">Hide</button>
+                </div>
+
                 <button id="settings-btn" class="footer-btn">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     Settings
@@ -109,7 +113,7 @@
         </main>
     </div>
 
-    <!-- ============ DISABLE ADS CONFIRM MODAL (friendly) ============ -->
+    <!-- ============ DISABLE ADS CONFIRM MODAL ============ -->
     <div id="disable-ads-modal" class="modal-overlay hidden">
         <div class="modal modal-small">
             <div class="modal-head">
