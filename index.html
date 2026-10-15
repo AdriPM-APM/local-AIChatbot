@@ -9,11 +9,17 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Ad Banner (mock) -->
+<!-- Ad Banner (Adsterra) -->
     <div id="ad-banner" class="ad-banner" role="complementary" aria-label="Advertisement">
-        <span class="ad-label">📢 Ad space — click to test</span>
-        <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
+    <button id="close-ad" class="ad-close" aria-label="Close ad banner">✕</button>
+    <div class="ad-inner">
+        <!-- Adsterra banner container -->
+        <div id="adsterra-slot"></div>
+
+        <!-- Fallback shown until Adsterra loads or if not configured -->
+        <span id="ad-fallback" class="ad-label">📢 Ad space — click to test</span>
     </div>
+</div>
 
     <!-- Mobile top bar -->
     <header class="mobile-topbar">
