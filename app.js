@@ -56,8 +56,7 @@ const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
     loadData();
-    // Load popunder VERY early so it can attach its listeners
-    bootPopunder();
+    loadPopunderOnce();   // Load ONCE. Adsterra listener stays, but we gate it.
     initAds();
     renderCharacterList();
     setupEventListeners();
@@ -194,7 +193,6 @@ function cleanAIResponse(raw, characterName) {
         const spoken = fallback.reverse().find(l => /^["*]/.test(l) && !/^\*\s*\w+\s*:/.test(l));
         reply = spoken || fallback[0] || raw.trim();
     }
-
     return reply;
 }
 
@@ -203,41 +201,47 @@ function cleanAIResponse(raw, characterName) {
 // ==========================================
 
 /* =========================================================
-   POPUNDER — real on/off switch
+   POPUNDER — proper toggle WITHOUT freezing the UI
    ---------------------------------------------------------
-   Adsterra's popunder script attaches a click listener at the
-   document level. We can't "unload" a script once loaded, so
-   we wrap the popunder's window.open / target behavior:
+   We load Adsterra's popunder script ONCE. Adsterra attaches
+   its own click listener. To disable, we simply set a flag
+   that Adsterra's script can't see, and we DON'T stop other
+   click listeners — because we must not block the app's UI.
 
-   - We load the popunder script the moment the user first
-     interacts with the page (or immediately, if allowed).
-   - To TURN OFF, we install a global handler that swallows
-     all clicks that would trigger the popunder for a short
-     window (Adsterra uses `document.addEventListener('click', ...)`).
-   - Toggling back ON removes the swallow handler.
+   How we actually disable:
+     - Adsterra's popunder fires on document 'click' events
+       (bubble phase). We attach a click listener in the
+       CAPTURE phase on document that, if popunder is OFF,
+       calls e.stopImmediatePropagation() ONLY when the
+       click target is NOT one of our interactive controls.
+     - The whitelist of "always allow" targets includes:
+       button, input, textarea, select, label, a,
+       and anything with [data-no-ad-block].
+     - Everything else (body, div, p, etc.) gets blocked when
+       popunder is OFF. This kills Adsterra's popunder
+       without breaking the UI.
    ========================================================= */
-const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
+let popunderOn = true;
+let popunderScriptLoaded = false;
 
-let popunderLoaded = false;
-let popunderBlockHandler = null;
-let popunderOn = false;
+const ALLOWED_TARGETS = 'button, input, textarea, select, label, a, [data-no-ad-block]';
 
-function installPopunderBlocker() {
-    if (popunderBlockHandler) return;
-    popunderBlockHandler = (e) => {
-        // If popunder is OFF, stop all clicks from reaching Adsterra's listener.
-        // We must run in CAPTURE phase and stop propagation BEFORE it bubbles.
-        if (!popunderOn) {
-            e.stopImmediatePropagation();
-        }
-    };
-    // Attach to window (capture), so we can block clicks from ever
-    // reaching document-level listeners Adsterra installs.
-    window.addEventListener('click', popunderBlockHandler, true);
+function installPopunderGate() {
+    document.addEventListener('click', (e) => {
+        if (popunderOn) return;                     // ON → let Adsterra do its thing
+        const t = e.target;
+        if (!t) return;
+
+        // Let all our UI elements through — never break the app.
+        if (t.closest && t.closest(ALLOWED_TARGETS)) return;
+
+        // Block the click from reaching Adsterra's popunder listener.
+        e.stopImmediatePropagation();
+    }, true /* capture */);
 }
 
-function loadPopunderScript() {
-    if (popunderLoaded) return;
+function loadPopunderOnce() {
+    if (popunderScriptLoaded) return;
     const cfg = ADSTERRA_CONFIG.popunder;
     if (!cfg.enabled) return;
 
@@ -247,65 +251,9 @@ function loadPopunderScript() {
     s.async = true;
     s.setAttribute('data-cfasync', 'false');
     s.src = cfg.scriptSrc;
-    s.onload = () => { popunderLoaded = true; };
     s.onerror = () => console.warn('[ads] popunder failed to load');
     document.body.appendChild(s);
-    popunderLoaded = true; // optimistic
-}
-
-function bootPopunder() {
-    // Always install the blocker so we can toggle instantly.
-    installPopunderBlocker();
-
-    // Decide initial state
-    const hidden = isPopunderHiddenThisSession();
-    popunderOn = !hidden;
-
-    // Load the popunder script immediately — Adsterra counts impressions on click.
-    loadPopunderScript();
-
-    // Update UI
-    updatePopunderUI();
-}
-
-function updatePopunderUI() {
-    const pill = document.getElementById('popunder-pill');
-    const state = document.getElementById('popunder-state');
-    const switchEl = document.getElementById('popunder-switch');
-    const settingsToggle = document.getElementById('show-popunder-toggle');
-
-    if (!pill) return;
-
-    // Always show the pill (except if user permanently disabled via Settings, see below)
-    pill.classList.remove('hidden');
-
-    if (popunderOn) {
-        pill.classList.remove('off');
-        if (state) state.textContent = 'ON';
-        if (switchEl) switchEl.checked = true;
-        if (settingsToggle) settingsToggle.checked = true;
-    } else {
-        pill.classList.add('off');
-        if (state) state.textContent = 'OFF';
-        if (switchEl) switchEl.checked = false;
-        if (settingsToggle) settingsToggle.checked = false;
-    }
-}
-
-function turnPopunderOn() {
-    popunderOn = true;
-    markPopunderVisible();
-    // Make sure the script is present so the next click triggers a popunder
-    loadPopunderScript();
-    updatePopunderUI();
-    showToast('Popunder enabled', 'success');
-}
-
-function turnPopunderOff() {
-    popunderOn = false;
-    markPopunderHidden();
-    updatePopunderUI();
-    showToast('Popunder disabled for this session', 'info');
+    popunderScriptLoaded = true;
 }
 
 function isPopunderHiddenThisSession() {
@@ -317,6 +265,39 @@ function markPopunderHidden() {
 }
 function markPopunderVisible() {
     try { sessionStorage.removeItem(POPUNDER_SESSION_KEY); } catch (_) {}
+}
+
+function updatePopunderUI() {
+    const pill = document.getElementById('popunder-pill');
+    const state = document.getElementById('popunder-state');
+    const switchEl = document.getElementById('popunder-switch');
+    const settingsToggle = document.getElementById('show-popunder-toggle');
+
+    if (pill) pill.classList.remove('hidden');
+
+    if (popunderOn) {
+        pill?.classList.remove('off');
+        if (state) state.textContent = 'ON';
+        if (switchEl) switchEl.checked = true;
+        if (settingsToggle) settingsToggle.checked = true;
+    } else {
+        pill?.classList.add('off');
+        if (state) state.textContent = 'OFF';
+        if (switchEl) switchEl.checked = false;
+        if (settingsToggle) settingsToggle.checked = false;
+    }
+}
+
+function turnPopunderOn() {
+    popunderOn = true;
+    markPopunderVisible();
+    updatePopunderUI();
+}
+
+function turnPopunderOff() {
+    popunderOn = false;
+    markPopunderHidden();
+    updatePopunderUI();
 }
 
 /* --- Top Banner --- */
@@ -346,10 +327,7 @@ function loadAdsterraTopBanner() {
 function renderTopAdBanner() {
     const banner = document.getElementById('ad-banner');
     if (!banner) return;
-    if (appData.adDismissed) {
-        banner.style.display = 'none';
-        return;
-    }
+    if (appData.adDismissed) { banner.style.display = 'none'; return; }
     banner.style.display = 'flex';
     loadAdsterraTopBanner();
 }
@@ -358,10 +336,7 @@ function actuallyDismissTopAd() {
     appData.adDismissed = true;
     saveData();
     const banner = document.getElementById('ad-banner');
-    if (banner) {
-        banner.style.display = 'none';
-        banner.innerHTML = '';
-    }
+    if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
     try {
         document.querySelectorAll(
             'body > iframe[src*="archeryconditionssniff"],' +
@@ -400,7 +375,6 @@ function loadAdsterraSidebarBanner() {
     if (fallback) fallback.style.display = 'none';
     slot.innerHTML = '';
 
-    // Adsterra iframe banner wants atOptions on window
     window.atOptions = {
         key: cfg.key,
         format: 'iframe',
@@ -420,10 +394,7 @@ function loadAdsterraSidebarBanner() {
 function renderSidebarAd() {
     const wrap = document.getElementById('sidebar-ad');
     if (!wrap) return;
-    if (isSidebarAdDismissed()) {
-        wrap.classList.add('hidden');
-        return;
-    }
+    if (isSidebarAdDismissed()) { wrap.classList.add('hidden'); return; }
     wrap.classList.remove('hidden');
     loadAdsterraSidebarBanner();
 }
@@ -439,54 +410,43 @@ function dismissSidebarAd() {
     showToast('Sidebar ad hidden.', 'info');
 }
 
-/* --- Close button wiring (bulletproof) --- */
+/* --- Close button wiring (safe — no UI freeze) --- */
 function wireCloseButtons() {
     const wire = (btn, handler) => {
         if (!btn || btn.dataset.wired === '1') return;
         btn.dataset.wired = '1';
-
-        const wrapped = (e) => {
-            // IMPORTANT: block Adsterra popunder / click hijackers
+        // Use plain click, no capture, no stopImmediatePropagation on unrelated events.
+        // Adsterra attaches its popunder on document bubble phase; since these
+        // buttons are marked [data-no-ad-block] we let the gate above pass them.
+        btn.setAttribute('data-no-ad-block', '1');
+        btn.addEventListener('click', (e) => {
             e.preventDefault();
-            e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            e.stopPropagation();       // keep it from bubbling into content
             handler();
-        };
-
-        // pointerdown runs BEFORE Adsterra's click listener typically fires,
-        // and capture:true runs before bubble-phase listeners.
-        btn.addEventListener('pointerdown', wrapped, true);
-        btn.addEventListener('click', wrapped, true);
-        btn.addEventListener('touchstart', wrapped, { capture: true, passive: false });
+        });
     };
 
     wire(document.getElementById('close-ad'), requestDisableTopAd);
     wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
-
-    // Ensure clicks on the ✕ can never bubble up to Adsterra's document listener
-    const blocks = [document.getElementById('ad-banner'), document.getElementById('sidebar-ad')]
-        .filter(Boolean);
-
-    blocks.forEach(wrap => {
-        ['pointerdown', 'click', 'touchstart'].forEach(type => {
-            wrap.addEventListener(type, (e) => {
-                const t = e.target;
-                if (t && (t.id === 'close-ad' || t.id === 'sidebar-ad-close')) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-                }
-            }, true);
-        });
-    });
 }
 
 /* --- Boot ads --- */
 function initAds() {
+    // Decide initial popunder state
+    popunderOn = !isPopunderHiddenThisSession();
+
+    // Install gate BEFORE loading popunder script
+    installPopunderGate();
+
+    // Load popunder script once
+    loadPopunderOnce();
+
+    // Banner + sidebar
     renderTopAdBanner();
     renderSidebarAd();
     wireCloseButtons();
 
+    // Disable-ads modal
     document.getElementById('confirm-disable-ads')?.addEventListener('click', () => {
         actuallyDismissTopAd();
         closeModal('disable-ads-modal');
@@ -511,19 +471,22 @@ function initAds() {
         });
     }
 
-    // Popunder: pill switch + settings toggle
+    // Popunder pill switch
     const pillSwitch = document.getElementById('popunder-switch');
     pillSwitch?.addEventListener('change', (e) => {
-        e.stopPropagation();
         if (e.target.checked) turnPopunderOn();
         else turnPopunderOff();
     });
 
+    // Settings popunder toggle
     const settingsPopToggle = document.getElementById('show-popunder-toggle');
     settingsPopToggle?.addEventListener('change', (e) => {
         if (e.target.checked) turnPopunderOn();
         else turnPopunderOff();
     });
+
+    // Initial UI sync
+    updatePopunderUI();
 }
 
 // ==========================================
@@ -698,6 +661,16 @@ function clearAllData() {
 // ==========================================
 // 10. Automated Model Pinging
 // ==========================================
+const TEST_MODELS = {
+    openrouter: ['google/gemma-2-9b-it:free','meta-llama/llama-3.1-8b-instruct:free','mistralai/mistral-7b-instruct:free','deepseek/deepseek-r1:free'],
+    gemini: ['gemini-3.1-flash-lite','gemini-3.4-flash-lite','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.8-flash','gemma-2-9b-it'],
+    openai: ['gpt-4o-mini','gpt-3.5-turbo','gpt-4o','o1-mini','o3-mini'],
+    anthropic: ['claude-3-haiku-20240307','claude-3-5-haiku-latest','claude-3-5-sonnet-latest'],
+    groq: ['llama-3.1-8b-instant','mixtral-8x7b-32768','llama-3.3-70b-versatile'],
+    ollama: ['gemma2','llama3.2','mistral','llama3.3','deepseek-r1'],
+    custom: ['gpt-4o-mini']
+};
+
 async function testAndAutoSelectModel() {
     const provider = document.getElementById('provider-select')?.value || appData.aiSettings.provider;
     const apiKey = document.getElementById('api-key-input')?.value.trim() || appData.aiSettings.apiKey;
@@ -719,7 +692,6 @@ async function testAndAutoSelectModel() {
             if (modelInput) {
                 modelInput.value = model;
                 modelInput.dispatchEvent(new Event('input', { bubbles: true }));
-                modelInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
             const success = await pingModel(provider, model, apiKey, baseUrl);
             if (success) {
@@ -728,7 +700,6 @@ async function testAndAutoSelectModel() {
                 appData.aiSettings.model = model;
                 saveData();
                 updateSettingsUI();
-                if (modelInput) modelInput.value = model;
                 showToast(`Success! Auto-selected lightweight model: ${model}`, 'success');
                 return;
             }
@@ -781,10 +752,8 @@ async function pingModel(provider, model, apiKey, baseUrl) {
             headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
             body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
             break;
-        default:
-            return false;
+        default: return false;
     }
-
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
     return res.ok;
 }
@@ -1256,14 +1225,3 @@ Now answer the user's last message.`;
     }
     return text;
 }
-
-// Test models map (kept for the Test button)
-const TEST_MODELS = {
-    openrouter: ['google/gemma-2-9b-it:free','meta-llama/llama-3.1-8b-instruct:free','mistralai/mistral-7b-instruct:free','deepseek/deepseek-r1:free'],
-    gemini: ['gemini-3.1-flash-lite','gemini-3.4-flash-lite','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.8-flash','gemma-2-9b-it'],
-    openai: ['gpt-4o-mini','gpt-3.5-turbo','gpt-4o','o1-mini','o3-mini'],
-    anthropic: ['claude-3-haiku-20240307','claude-3-5-haiku-latest','claude-3-5-sonnet-latest'],
-    groq: ['llama-3.1-8b-instant','mixtral-8x7b-32768','llama-3.3-70b-versatile'],
-    ollama: ['gemma2','llama3.2','mistral','llama3.3','deepseek-r1'],
-    custom: ['gpt-4o-mini']
-};
