@@ -452,13 +452,14 @@ function clearAllData() {
 }
 
 // ==========================================
-// 10. Automated Model Pinging & Auto-Select
+// 10. Automated Model Pinging & Direct Writing to Model Input
 // ==========================================
 async function testAndAutoSelectModel() {
     const provider = document.getElementById('provider-select')?.value || appData.aiSettings.provider;
     const apiKey = document.getElementById('api-key-input')?.value.trim() || appData.aiSettings.apiKey;
     const baseUrl = document.getElementById('base-url-input')?.value.trim() || appData.aiSettings.baseUrl;
     const models = TEST_MODELS[provider];
+    const modelEl = document.getElementById('model-select');
 
     if (!models || models.length === 0) {
         showToast('No test models available for this provider.', 'error');
@@ -470,11 +471,21 @@ async function testAndAutoSelectModel() {
         return;
     }
 
-    showToast(`Pinging ${models.length} models for ${provider}...`, 'info');
-
     for (const model of models) {
         try {
-            showToast(`Testing model: ${model}...`, 'info');
+            // Write the model directly into the model input/dropdown box in real-time as it tests
+            if (modelEl) {
+                if (modelEl.tagName === 'SELECT') {
+                    if (!Array.from(modelEl.options).some(o => o.value === model)) {
+                        const opt = document.createElement('option');
+                        opt.value = model;
+                        opt.textContent = model;
+                        modelEl.appendChild(opt);
+                    }
+                }
+                modelEl.value = model;
+            }
+
             const success = await pingModel(provider, model, apiKey, baseUrl);
             if (success) {
                 appData.aiSettings.provider = provider;
@@ -498,7 +509,6 @@ async function pingModel(provider, model, apiKey, baseUrl) {
     const testMessages = [{ role: 'user', content: 'Hi' }];
     const normalizedModel = normalizeModelName(model, provider);
 
-    // Strictly separate providers using their own specific endpoints & keys
     switch (provider) {
         case 'openrouter':
             url = 'https://openrouter.ai/api/v1/chat/completions';
