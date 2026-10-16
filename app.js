@@ -197,10 +197,14 @@ function cleanAIResponse(raw, characterName) {
 }
 
 /* ============================================================================
-   SECTION 7 — ADS
+   SECTION 7 — ADS & POPUNDER (UPDATED)
    ============================================================================ */
 let popunderOn = true;
 let popunderScriptLoaded = false;
+
+const POPUNDER_LAST_LOAD_KEY = 'hubs_popunder_last_load_timestamp';
+const POPUNDER_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes cooldown
+const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 
 const ALLOWED_TARGETS = 'button, input, textarea, select, label, a, [data-no-ad-block]';
 
@@ -215,9 +219,18 @@ function installPopunderGate() {
 }
 
 function loadPopunderOnce() {
-    if (popunderScriptLoaded) return;
+    if (!popunderOn) return;
     const cfg = ADSTERRA_CONFIG.popunder;
     if (!cfg.enabled) return;
+
+    // Check if 20 minutes have passed since the last popunder
+    const lastLoad = localStorage.getItem(POPUNDER_LAST_LOAD_KEY);
+    const now = Date.now();
+    if (lastLoad && (now - parseInt(lastLoad, 10) < POPUNDER_INTERVAL_MS)) {
+        return;
+    }
+
+    if (popunderScriptLoaded) return;
 
     const s = document.createElement('script');
     s.id = 'adsterra-popunder-script';
@@ -228,6 +241,9 @@ function loadPopunderOnce() {
     s.onerror = () => console.warn('[ads] popunder failed to load');
     document.body.appendChild(s);
     popunderScriptLoaded = true;
+    
+    // Save current timestamp for the 20-minute interval
+    localStorage.setItem(POPUNDER_LAST_LOAD_KEY, now.toString());
 }
 
 function isPopunderHiddenThisSession() {
@@ -347,6 +363,7 @@ function loadAdsterraSidebarBanner() {
     if (fallback) fallback.style.display = 'none';
     slot.innerHTML = '';
 
+    // Assign atOptions and load sidebar banner script reliably
     window.atOptions = {
         key: cfg.key,
         format: 'iframe',
