@@ -87,6 +87,7 @@
                     </label>
                 </div>
 
+                <button id="support-btn" class="footer-btn support-btn hidden" data-no-ad-block="1">♥ Support Hubs</button>
                 <button id="settings-btn" class="footer-btn" data-no-ad-block="1">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     Settings
@@ -106,7 +107,10 @@
                         <p id="chat-subtitle">Pick from your hubs or create a new one</p>
                     </div>
                 </div>
-                <button id="clear-chat-btn" class="ghost-btn hidden" data-no-ad-block="1">Clear chat</button>
+                <div class="chat-actions">
+                    <button id="tip-btn" class="ghost-btn hidden" data-no-ad-block="1">♥ Tip creator</button>
+                    <button id="clear-chat-btn" class="ghost-btn hidden" data-no-ad-block="1">Clear chat</button>
+                </div>
             </header>
 
             <!-- ============ MOBILE AD (300x250, phones and tablets only) ============ -->
@@ -310,6 +314,11 @@
                     <label>Backstory</label>
                     <textarea id="char-backstory" rows="4" placeholder="Detailed personality and history"></textarea>
                 </div>
+                <div class="field">
+                    <label>Creator PayPal (optional)</label>
+                    <input type="text" id="char-paypal" placeholder="paypal.me/yourname or yourname">
+                    <small>Adds a "Tip creator" button in this character's chat.</small>
+                </div>
                 <div class="field row-between">
                     <label>Private only</label>
                     <label class="switch" data-no-ad-block="1">
@@ -330,9 +339,19 @@
         </div>
     </div>
 
-    <div id="toast-container" class="toast-container"></div>
-
-    <script src="app.js" defer></script>
-    <script src="anti-adblock.js" defer></script>
-</body>
-</html>
+    <!-- Support Hubs modal -->
+    <div id="support-modal" class="modal-overlay hidden">
+        <div class="modal modal-small">
+            <div class="modal-head">
+                <h2>Support Hubs</h2>
+                <button class="icon-btn ghost close-modal-btn" data-modal="support-modal" aria-label="Close" data-no-ad-block="1">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="friendly-note">
+                    <div class="friendly-emoji">💜</div>
+                    <p>Hubs is free. If you enjoy it, a small donation helps keep it running and new features coming.</p>
+                </div>
+                <div id="support-presets" class="preset-grid"></div>
+                <a id="support-other" class="btn secondary support-other" target="_blank" rel="noopener noreferrer">Other amount on PayPal</a>
+                <p class="notice">
+                    Donations are optional and go directly through PayPal. Hubs does not process, store, or see your payment d
