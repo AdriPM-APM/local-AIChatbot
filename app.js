@@ -1051,3 +1051,113 @@ async function saveCharacterFromModal() {
     closeModal('character-modal');
     showToast(`Created character ${name}!`, 'success');
 }
+
+/* ============================================================================
+   SECTION 14 — AI MODEL TESTING & AUTO-DISCOVERY ALGORITHM (UPDATED)
+   ============================================================================ */
+async function testAIModel() {
+    const resultEl = document.getElementById('model-test-result');
+    const modelInput = document.getElementById('model-input');
+    const provider = val('provider-select');
+    const apiKey = val('api-key-input').trim();
+    const baseUrl = val('base-url-input').trim();
+
+    if (!resultEl || !modelInput) return;
+
+    let targetModel = modelInput.value.trim();
+
+    // OpenRouter: El usuario puede escribirlo, pero si lo olvida o hay un despiste, `:free` es el valor por defecto [Verificable].
+    if (provider === 'openrouter') {
+        if (!targetModel) {
+            targetModel = 'google/gemma-3-27b-it:free'; // Modelo ligero y gratuito por defecto [Verificable]
+        } else if (!targetModel.includes(':free') && !targetModel.includes(':paid')) {
+            targetModel = targetModel + ':free';
+        }
+    }
+
+    resultEl.textContent = 'Probando conexión y modelo...';
+    resultEl.style.color = 'var(--text-2)';
+
+    try {
+        let success = false;
+        let workingModel = targetModel;
+
+        if (provider === 'gemini') {
+            // Gemini: Prioriza el modelo introducido por el usuario, luego busca opciones ligeras y actuales [Verificable].
+            const candidates = [
+                targetModel,
+                'gemini-3.1-flash-lite',
+                'gemini-3.8-flash',
+                'gemini-3.6-flash'
+            ].filter(Boolean);
+
+            const uniqueCandidates = [...new Set(candidates)];
+
+            for (const m of uniqueCandidates) {
+                try {
+                    const normM = normalizeModelName(m, 'gemini');
+                    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${normM}:generateContent?key=${apiKey}`;
+                    const res = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping' }] }] })
+                    });
+                    if (res.ok) {
+                        workingModel = m;
+                        success = true;
+                        break;
+                    }
+                } catch (e) {
+                    // Si falla este candidato, pasa al siguiente
+                }
+            }
+        } else {
+            // Comprobación estándar para OpenAI, Anthropic, Groq, Ollama y personalizados
+            const conf = PROVIDERS[provider] || PROVIDERS.custom;
+            const url = provider === 'custom' || provider === 'ollama' ? (baseUrl || conf.baseUrl) : conf.baseUrl;
+            const endpoint = provider === 'anthropic' ? `${url}/messages` : `${url}/chat/completions`;
+            
+            let headers = { 'Content-Type': 'application/json' };
+            if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+            if (provider === 'anthropic') {
+                headers['x-api-key'] = apiKey;
+                headers['anthropic-version'] = '2023-06-01';
+            }
+            if (provider === 'openrouter') {
+                headers['HTTP-Referer'] = window.location.origin;
+                headers['X-Title'] = 'Hubs Chat';
+            }
+
+            let body = {
+                model: workingModel,
+                messages: [{ role: 'user', content: 'Ping' }],
+                max_tokens: 10
+            };
+
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(body)
+            });
+
+            success = res.ok;
+            if (!res.ok) {
+                const errData = await res.text();
+                throw new Error(errData.slice(0, 100));
+            }
+        }
+
+        if (success) {
+            modelInput.value = workingModel;
+            resultEl.textContent = `✓ ¡Conectado con éxito! El modelo "${workingModel}" responde correctamente [Verificable].`;
+            resultEl.style.color = 'var(--success)';
+            showToast(`¡Modelo ${workingModel} verificado y operativo!`, 'success');
+        } else {
+            throw new Error('La prueba del modelo falló o no hay conexión [Verificable].');
+        }
+    } catch (err) {
+        resultEl.textContent = `✗ Error de conexión: ${err.message} [Verificable].`;
+        resultEl.style.color = 'var(--danger)';
+        showToast('Fallo en la prueba del modelo. Comprueba la clave API.', 'error');
+    }
+}
