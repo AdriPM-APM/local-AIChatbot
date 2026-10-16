@@ -1,4 +1,8 @@
 /* ============================================================================
+   Hubs — app.js
+   ============================================================================ */
+
+/* ============================================================================
    SECTION 1 — CONSTANTS & STATE
    ============================================================================ */
 const STORAGE_KEY = 'aiCharacterAppData';
@@ -7,7 +11,7 @@ let appData = {
     aiSettings: {
         provider: 'gemini',
         apiKey: '',
-        model: 'gemini-3.1-flash-lite',
+        model: 'gemini-2.0-flash',
         baseUrl: '',
         temperature: 0.7,
         topP: 0.95,
@@ -26,9 +30,7 @@ let appData = {
 let currentCharacterId = null;
 let isGenerating = false;
 
-/* =========================================================
-   ADSTERRA CONFIG
-   ========================================================= */
+/* Adsterra config */
 const ADSTERRA_CONFIG = {
     topBanner: {
         enabled: true,
@@ -50,19 +52,21 @@ const ADSTERRA_CONFIG = {
 
 const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
 const POPUNDER_LAST_LOAD_KEY = 'hubs_popunder_last_load_timestamp';
-const POPUNDER_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes interval
+const POPUNDER_INTERVAL_MS = 20 * 60 * 1000;
 const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 
 /* ============================================================================
-   SECTION 2 — BOOTSTRAP
+   SECTION 2 — BOOTSTRAP (fail-isolated, listeners first)
    ============================================================================ */
 document.addEventListener('DOMContentLoaded', () => {
-    loadData();
-    loadPopunderOnce();
-    initAds();
-    renderCharacterList();
-    setupEventListeners();
-    updateSettingsUI();
+    const safe = (name, fn) => {
+        try { fn(); } catch (e) { console.error(`[boot] ${name} failed:`, e); }
+    };
+    safe('loadData', loadData);
+    safe('setupEventListeners', setupEventListeners);
+    safe('renderCharacterList', () => renderCharacterList());
+    safe('updateSettingsUI', updateSettingsUI);
+    safe('initAds', initAds);
 });
 
 /* ============================================================================
@@ -71,14 +75,19 @@ document.addEventListener('DOMContentLoaded', () => {
 function loadData() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.aiSettings) {
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            if (parsed.aiSettings && typeof parsed.aiSettings === 'object') {
                 appData.aiSettings = { ...appData.aiSettings, ...parsed.aiSettings };
             }
-            appData = { ...appData, ...parsed, aiSettings: appData.aiSettings };
+            if (Array.isArray(parsed.characters)) appData.characters = parsed.characters;
+            if (parsed.chats && typeof parsed.chats === 'object') appData.chats = parsed.chats;
+            if (typeof parsed.adDismissed === 'boolean') appData.adDismissed = parsed.adDismissed;
         }
-    } catch (e) { console.error('Failed to load data', e); }
+    } catch (e) {
+        console.error('Failed to load data', e);
+    }
 }
 
 function saveData() {
@@ -87,40 +96,28 @@ function saveData() {
 }
 
 /* ============================================================================
-   SECTION 4 — INDEXEDDB FOR AVATARS
+   SECTION 4 — HELPERS
    ============================================================================ */
-const DB_NAME = 'CharacterAvatarsDB';
-const STORE = 'avatars';
-
-function openDB() {
+function fileToDataURL(file) {
     return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, 1);
-        req.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
     });
 }
 
-async function saveAvatar(id, file) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        tx.objectStore(STORE).put(file, id).onsuccess = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-async function getAvatar(id) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readonly');
-        const req = tx.objectStore(STORE).get(id);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
+function defaultAvatarDataUri(name) {
+    const letter = (name || '?').trim().charAt(0).toUpperCase() || '?';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#d946ef"/>
+        </linearGradient></defs>
+        <rect width="64" height="64" rx="14" fill="url(#g)"/>
+        <text x="32" y="42" font-size="30" font-family="system-ui,sans-serif"
+              font-weight="700" fill="#fff" text-anchor="middle">${letter}</text>
+    </svg>`;
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
 /* ============================================================================
@@ -141,12 +138,13 @@ function normalizeModelName(model, provider) {
 }
 
 /* ============================================================================
-   SECTION 6 — RESPONSE SANITIZER
+   SECTION 6 — RESPONSE SANITIZER (regexes fixed)
    ============================================================================ */
 function cleanAIResponse(raw, characterName) {
     if (!raw) return '';
     let reply = raw;
 
+    /* Drop leading "pseudo-header" lines like "* User asks: ..." */
     const lines = raw.split('\n');
     let firstRealIdx = -1;
     for (let i = 0; i < lines.length; i++) {
@@ -154,66 +152,77 @@ function cleanAIResponse(raw, characterName) {
         if (!l) continue;
         if (/^\*\s*[A-Za-z][A-Za-z\s/]+:\s*/.test(l)) continue;
         if (/^\*?\s*(User asks|Character|Input context|Internal state|Motivation|Emotion|Direct response|Dialogue|Length|Format|Followed by|No meta-text|First person|THOUGHT)\b/i.test(l)) continue;
-        firstRealIdx = i; break;
+        firstRealIdx = i;
+        break;
     }
     if (firstRealIdx > 0) reply = lines.slice(firstRealIdx).join('\n');
 
     reply = reply.replace(/\[REASONING\][\s\S]*?\[\/REASONING\]/gi, '');
     reply = reply.replace(/\[\/?REASONING\]/gi, '');
 
+    /* FIXED: was /.*\$/gim which matched a literal "$" */
     const headerLines = [
-        /^\s*\*\s*format\s*:.*\$/gim, /^\s*\*\s*user\s+asks?\s*:.*\$/gim,
-        /^\s*\*\s*character\s*:.*\$/gim, /^\s*\*\s*input\s+context\s*:.*\$/gim,
-        /^\s*\*\s*internal\s+state\s*:.*\$/gim, /^\s*\*\s*motivation\s*:.*\$/gim,
-        /^\s*\*\s*emotion\s*:.*\$/gim, /^\s*\*\s*direct\s+response\s*:.*\$/gim,
-        /^\s*\*\s*dialogue\s*\/\s*action\s*:.*\$/gim, /^\s*\*\s*length\s*:.*\$/gim,
-        /^\s*\*\s*followed\s+by.*\$/gim, /^\s*\*\s*no\s+meta-text.*\$/gim,
-        /^\s*\*\s*first\s+person.*\$/gim
+        /^\s*\*?\s*format\s*:.*$/gim,
+        /^\s*\*?\s*user\s+asks?\s*:.*$/gim,
+        /^\s*\*?\s*character\s*:.*$/gim,
+        /^\s*\*?\s*input\s+context\s*:.*$/gim,
+        /^\s*\*?\s*internal\s+state\s*:.*$/gim,
+        /^\s*\*?\s*motivation\s*:.*$/gim,
+        /^\s*\*?\s*emotion\s*:.*$/gim,
+        /^\s*\*?\s*direct\s+response\s*:.*$/gim,
+        /^\s*\*?\s*dialogue\s*\/\s*action\s*:.*$/gim,
+        /^\s*\*?\s*length\s*:.*$/gim,
+        /^\s*\*?\s*followed\s+by.*$/gim,
+        /^\s*\*?\s*no\s+meta-text.*$/gim,
+        /^\s*\*?\s*first\s+person.*$/gim
     ];
     for (const p of headerLines) reply = reply.replace(p, '');
 
+    /* FIXED: use (?=\n\n|$) end-of-line, dropped the "okay, so" killer */
     const prefixes = [
-        /^\s*\*?\s*(reasoning|analysis|thoughts?|thinking|internal monologue|chain of thought|let me think|okay,?\s*so)\s*[:\-]?\s*[\s\S]*?(?=\n\n|\$)/i,
-        /^\s*(as an ai|i'm an ai|i am an ai|as a language model)\s*[:\-]?\s*[\s\S]*?(?=\n\n|\$)/i,
-        /^\s*\*?[^*\n]{0,120}?\*?\s*(reaction|response|body language|personality|context|scenario|note)\s*[:\-]\s*[\s\S]*?(?=\n\n|\$)/i
+        /^\s*\*?\s*(reasoning|analysis|thoughts?|thinking|internal monologue|chain of thought|let me think)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i,
+        /^\s*(as an ai|i'm an ai|i am an ai|as a language model)\s*[:\-]?\s*[\s\S]*?(?=\n\n|$)/i
     ];
     for (const p of prefixes) reply = reply.replace(p, '');
 
     if (characterName) {
-        const esc = characterName.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&');
+        const esc = characterName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         reply = reply.replace(new RegExp(`^\\s*\\*?\\s*${esc}\\s*\\*?\\s*:\\s*`, 'i'), '');
     }
 
     const trailing = reply.search(/\n\s*\*?\s*(reasoning|analysis|thoughts?|note|ooc|end of response|format)\s*[:\-]/i);
     if (trailing !== -1) reply = reply.slice(0, trailing);
 
-    reply = reply.replace(/^\s*THOUGHT\s*:\s*[\s\S]*?(?=\n\n|\$)/i, '');
+    reply = reply.replace(/^\s*THOUGHT\s*:\s*[\s\S]*?(?=\n\n|$)/i, '');
     reply = reply.replace(/\n{3,}/g, '\n\n').trim();
 
     if (!reply) {
+        /* FIXED: [...fallback].reverse() so we don't mutate the source array */
         const fallback = raw.split('\n').map(l => l.trim()).filter(Boolean);
-        const spoken = fallback.reverse().find(l => /^["*]/.test(l) && !/^\*\s*\w+\s*:/.test(l));
+        const spoken = [...fallback].reverse()
+            .find(l => /^["*]/.test(l) && !/^\*\s*\w+\s*:/.test(l));
         reply = spoken || fallback[0] || raw.trim();
     }
     return reply;
 }
 
 /* ============================================================================
-   SECTION 7 — ADS & POPUNDER RECODED
+   SECTION 7 — ADS & POPUNDER (idempotent, no click-gate)
    ============================================================================ */
 let popunderOn = true;
 let popunderScriptLoaded = false;
+let topBannerLoaded = false;
+let sidebarBannerLoaded = false;
 
-const ALLOWED_TARGETS = 'button, input, textarea, select, label, a, [data-no-ad-block]';
-
-function installPopunderGate() {
-    document.addEventListener('click', (e) => {
-        if (popunderOn) return;
-        const t = e.target;
-        if (!t) return;
-        if (t.closest && t.closest(ALLOWED_TARGETS)) return;
-        e.stopImmediatePropagation();
-    }, true);
+function isPopunderHiddenThisSession() {
+    try { return sessionStorage.getItem(POPUNDER_SESSION_KEY) === '1'; }
+    catch (_) { return false; }
+}
+function markPopunderHidden() {
+    try { sessionStorage.setItem(POPUNDER_SESSION_KEY, '1'); } catch (_) {}
+}
+function markPopunderVisible() {
+    try { sessionStorage.removeItem(POPUNDER_SESSION_KEY); } catch (_) {}
 }
 
 function loadPopunderOnce() {
@@ -223,10 +232,7 @@ function loadPopunderOnce() {
 
     const lastLoad = localStorage.getItem(POPUNDER_LAST_LOAD_KEY);
     const now = Date.now();
-    if (lastLoad && (now - parseInt(lastLoad, 10) < POPUNDER_INTERVAL_MS)) {
-        return;
-    }
-
+    if (lastLoad && (now - parseInt(lastLoad, 10) < POPUNDER_INTERVAL_MS)) return;
     if (popunderScriptLoaded) return;
 
     const s = document.createElement('script');
@@ -238,19 +244,7 @@ function loadPopunderOnce() {
     s.onerror = () => console.warn('[ads] Popunder blocked or failed to load.');
     document.body.appendChild(s);
     popunderScriptLoaded = true;
-
     localStorage.setItem(POPUNDER_LAST_LOAD_KEY, now.toString());
-}
-
-function isPopunderHiddenThisSession() {
-    try { return sessionStorage.getItem(POPUNDER_SESSION_KEY) === '1'; }
-    catch (_) { return false; }
-}
-function markPopunderHidden() {
-    try { sessionStorage.setItem(POPUNDER_SESSION_KEY, '1'); } catch (_) {}
-}
-function markPopunderVisible() {
-    try { sessionStorage.removeItem(POPUNDER_SESSION_KEY); } catch (_) {}
 }
 
 function updatePopunderUI() {
@@ -277,9 +271,9 @@ function updatePopunderUI() {
 function turnPopunderOn() {
     popunderOn = true;
     markPopunderVisible();
+    loadPopunderOnce();
     updatePopunderUI();
 }
-
 function turnPopunderOff() {
     popunderOn = false;
     markPopunderHidden();
@@ -297,17 +291,20 @@ function loadAdsterraTopBanner() {
         if (fallback) fallback.style.display = 'inline';
         return;
     }
-    slot.innerHTML = '';
+    if (topBannerLoaded) return;
+    topBannerLoaded = true;
 
+    slot.innerHTML = '';
     const s = document.createElement('script');
     s.type = 'text/javascript';
     s.async = true;
     s.setAttribute('data-cfasync', 'false');
     s.src = cfg.scriptSrc;
-
     s.onload = () => { if (fallback) fallback.style.display = 'none'; };
-    s.onerror = () => { if (fallback) fallback.style.display = 'inline'; };
-
+    s.onerror = () => {
+        if (fallback) fallback.style.display = 'inline';
+        topBannerLoaded = false;
+    };
     slot.appendChild(s);
 }
 
@@ -324,6 +321,8 @@ function actuallyDismissTopAd() {
     saveData();
     const banner = document.getElementById('ad-banner');
     if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
+    const toggle = document.getElementById('show-ads-toggle');
+    if (toggle) toggle.checked = false;
     try {
         document.querySelectorAll(
             'body > iframe[src*="archeryconditionssniff"],' +
@@ -358,9 +357,10 @@ function loadAdsterraSidebarBanner() {
         if (fallback) fallback.style.display = 'inline';
         return;
     }
+    if (sidebarBannerLoaded) return;
+    sidebarBannerLoaded = true;
 
     slot.innerHTML = '';
-
     window.atOptions = {
         key: cfg.key,
         format: 'iframe',
@@ -372,11 +372,13 @@ function loadAdsterraSidebarBanner() {
     const s = document.createElement('script');
     s.type = 'text/javascript';
     s.async = true;
+    s.setAttribute('data-cfasync', 'false');
     s.src = `${cfg.invokeUrl}/${cfg.key}/invoke.js`;
-
     s.onload = () => { if (fallback) fallback.style.display = 'none'; };
-    s.onerror = () => { if (fallback) fallback.style.display = 'inline'; };
-
+    s.onerror = () => {
+        if (fallback) fallback.style.display = 'inline';
+        sidebarBannerLoaded = false;
+    };
     slot.appendChild(s);
 }
 
@@ -410,14 +412,12 @@ function wireCloseButtons() {
             handler();
         });
     };
-
     wire(document.getElementById('close-ad'), requestDisableTopAd);
     wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
 }
 
 function initAds() {
     popunderOn = !isPopunderHiddenThisSession();
-    installPopunderGate();
     loadPopunderOnce();
     renderTopAdBanner();
     renderSidebarAd();
@@ -450,7 +450,6 @@ function initAds() {
         if (e.target.checked) turnPopunderOn();
         else turnPopunderOff();
     });
-
     document.getElementById('show-popunder-toggle')?.addEventListener('change', (e) => {
         if (e.target.checked) turnPopunderOn();
         else turnPopunderOff();
@@ -465,8 +464,8 @@ function initAds() {
 function setupEventListeners() {
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    const openDrawer = () => { sidebar.classList.add('open'); overlay.classList.remove('hidden'); };
-    const closeDrawer = () => { sidebar.classList.remove('open'); overlay.classList.add('hidden'); };
+    const openDrawer = () => { sidebar?.classList.add('open'); overlay?.classList.remove('hidden'); };
+    const closeDrawer = () => { sidebar?.classList.remove('open'); overlay?.classList.add('hidden'); };
 
     document.getElementById('mobile-menu-btn')?.addEventListener('click', openDrawer);
     document.getElementById('mobile-settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
@@ -477,17 +476,17 @@ function setupEventListeners() {
     document.getElementById('send-btn')?.addEventListener('click', sendMessage);
     document.getElementById('clear-chat-btn')?.addEventListener('click', clearCurrentChat);
 
-    document.getElementById('message-input')?.addEventListener('keydown', (e) => {
+    const ta = document.getElementById('message-input');
+    ta?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
         }
     });
-
-    const ta = document.getElementById('message-input');
     ta?.addEventListener('input', () => {
         ta.style.height = 'auto';
         ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
+        updateComposerState();
     });
 
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
@@ -530,20 +529,4 @@ function setupEventListeners() {
 
     document.getElementById('save-char-btn')?.addEventListener('click', saveCharacter);
     document.getElementById('search-input')?.addEventListener('input', (e) => {
-        renderCharacterList(e.target.value);
-    });
-}
-
-function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
-function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
-
-/* ============================================================================
-   SECTION 9 — TOAST & SETTINGS HELPERS
-   ============================================================================ */
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    const icons = { info: 'ℹ️', error: '⚠️', success: '✅' };
-    toast.innerHTML =
+        renderCharacterList(e.target.va
