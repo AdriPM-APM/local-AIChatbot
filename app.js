@@ -454,27 +454,55 @@ function markSidebarAdDismissed() {
 /* The sidebar 300x250 ad is the official Adsterra snippet placed directly in
    index.html (inline scripts let document.write work). Nothing to inject here;
    just hide the placeholder label. */
+const SIDEBAR_AD_IDS = ['sidebar-ad', 'mobile-ad'];
+const SIDEBAR_AD_SLOTS = [
+    { slot: 'sidebar-ad-slot', fallback: 'sidebar-ad-fallback' },
+    { slot: 'mobile-ad-slot', fallback: 'mobile-ad-fallback' }
+];
+let sidebarAdChecksScheduled = false;
+
+/* Shows the "Sponsored" label only while the ad hasn't rendered, so the box is never blank. */
+function updateSidebarAdFallback() {
+    for (const { slot, fallback } of SIDEBAR_AD_SLOTS) {
+        const slotEl = document.getElementById(slot);
+        const fb = document.getElementById(fallback);
+        if (!slotEl || !fb) continue;
+        fb.style.display = slotEl.querySelector('iframe, ins') ? 'none' : 'inline';
+    }
+}
+
+/* The ad code lives in index.html; this only keeps the label honest and re-checks it. */
 function loadAdsterraSidebarBanner() {
-    const fallback = document.getElementById('sidebar-ad-fallback');
-    if (fallback) fallback.style.display = 'none';
+    updateSidebarAdFallback();
+    if (!sidebarAdChecksScheduled) {
+        sidebarAdChecksScheduled = true;
+        setTimeout(updateSidebarAdFallback, 3000);
+        setTimeout(updateSidebarAdFallback, 8000);
+    }
 }
 
-/* Was always hidden before (bug). Now shown unless the user closed it. */
+/* Single source of truth for showing/hiding both sidebar placements. */
+function applySidebarAdVisibility() {
+    const hidden = isSidebarAdDismissed();
+    for (const id of SIDEBAR_AD_IDS) {
+        document.getElementById(id)?.classList.toggle('hidden', hidden);
+    }
+    if (!hidden) loadAdsterraSidebarBanner();
+}
+
+function setSidebarAdHidden(hidden) {
+    try { localStorage.setItem(SIDEBAR_AD_DISMISSED_KEY, hidden ? '1' : '0'); } catch (_) {}
+    applySidebarAdVisibility();
+}
+
 function renderSidebarAd() {
-    const wrap = document.getElementById('sidebar-ad');
-    if (!wrap) return;
-    if (isSidebarAdDismissed()) { wrap.classList.add('hidden'); return; }
-    wrap.classList.remove('hidden');
-    loadAdsterraSidebarBanner();
+    applySidebarAdVisibility();
 }
 
+/* Closing hides the ad but keeps its code, so Settings can bring it back. */
 function dismissSidebarAd() {
-    markSidebarAdDismissed();
-    const wrap = document.getElementById('sidebar-ad');
-    if (wrap) wrap.classList.add('hidden');
-    const slot = document.getElementById('sidebar-ad-slot');
-    if (slot) slot.innerHTML = '';
-    showToast('Sidebar ad hidden.', 'info');
+    setSidebarAdHidden(true);
+    showToast('Sidebar ad hidden. Turn it back on in Settings.', 'info');
 }
 
 function wireCloseButtons() {
@@ -489,6 +517,7 @@ function wireCloseButtons() {
     };
     wire(document.getElementById('close-ad'), requestDisableTopAd);
     wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
+    wire(document.getElementById('mobile-ad-close'), dismissSidebarAd);
 }
 
 function initAds() {
@@ -520,6 +549,12 @@ function initAds() {
                 requestDisableTopAd();
             }
         });
+    }
+
+    const sidebarToggle = document.getElementById('show-sidebar-toggle');
+    if (sidebarToggle) {
+        sidebarToggle.checked = !isSidebarAdDismissed();
+        sidebarToggle.addEventListener('change', (e) => setSidebarAdHidden(!e.target.checked));
     }
 
     document.getElementById('popunder-switch')?.addEventListener('change', (e) => {
@@ -1136,6 +1171,7 @@ function updateSettingsUI() {
 
     setChecked('disable-reasoning-toggle', s.disableReasoning);
     setChecked('show-ads-toggle', !appData.adDismissed);
+    setChecked('show-sidebar-toggle', !isSidebarAdDismissed());
     setChecked('show-popunder-toggle', popunderOn);
     updateBaseUrlVisibility(s.provider);
     updatePopunderUI();
