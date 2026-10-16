@@ -499,7 +499,7 @@ function initAds() {
 const SUPPORT = {
     /* Your PayPal.me name, e.g. 'yourname' for paypal.me/yourname.
        Leave it empty to hide the "Support Hubs" button. */
-    siteUser: '',
+    siteUser: 'https://www.paypal.com/paypalme/my/profile',
     presets: [1, 3, 5, 10]
 };
 
