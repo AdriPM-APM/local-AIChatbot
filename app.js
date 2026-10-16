@@ -1085,10 +1085,43 @@ async function testAIModel() {
         if (provider === 'gemini') {
             // Gemini: Prioriza el modelo introducido por el usuario, luego busca opciones ligeras y actuales [Verificable].
             const candidates = [
+/* ============================================================================
+   SECTION 14 — AI MODEL TESTING & AUTO-DISCOVERY ALGORITHM (UPDATED)
+   ============================================================================ */
+async function testAIModel() {
+    const resultEl = document.getElementById('model-test-result');
+    const modelInput = document.getElementById('model-input');
+    const provider = val('provider-select');
+    const apiKey = val('api-key-input').trim();
+    const baseUrl = val('base-url-input').trim();
+
+    if (!resultEl || !modelInput) return;
+
+    let targetModel = modelInput.value.trim();
+
+    // OpenRouter: El usuario puede escribirlo; si se olvida o hay despiste, `:free` es el valor por defecto [Verificable].
+    if (provider === 'openrouter') {
+        if (!targetModel) {
+            targetModel = 'google/gemma-3-27b-it:free'; // Modelo ligero y gratuito por defecto [Verificable]
+        } else if (!targetModel.includes(':free') && !targetModel.includes(':paid')) {
+            targetModel = targetModel + ':free';
+        }
+    }
+
+    resultEl.textContent = 'Probando conexión y modelo...';
+    resultEl.style.color = 'var(--text-2)';
+
+    try {
+        let success = false;
+        let workingModel = targetModel;
+
+        if (provider === 'gemini') {
+            // Gemini: Prioriza la entrada del usuario, luego recorre los modelos ligeros y actuales disponibles
+            const candidates = [
                 targetModel,
-                'gemini-3.1-flash-lite',
                 'gemini-3.8-flash',
-                'gemini-3.6-flash'
+                'gemini-3.5-flash-lite',
+                'gemini-3.1-flash-lite'
             ].filter(Boolean);
 
             const uniqueCandidates = [...new Set(candidates)];
@@ -1108,7 +1141,7 @@ async function testAIModel() {
                         break;
                     }
                 } catch (e) {
-                    // Si falla este candidato, pasa al siguiente
+                    // Pasa al siguiente candidato si este no responde
                 }
             }
         } else {
@@ -1160,4 +1193,5 @@ async function testAIModel() {
         resultEl.style.color = 'var(--danger)';
         showToast('Fallo en la prueba del modelo. Comprueba la clave API.', 'error');
     }
-}
+    }
+               
