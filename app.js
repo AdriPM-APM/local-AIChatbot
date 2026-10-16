@@ -527,4 +527,527 @@ function renderPresetLinks(containerId, user) {
         a.href = paypalLink(user, amt);
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
- 
+               a.textContent = `$${amt}`;
+        box.appendChild(a);
+    }
+}
+
+function initSupport() {
+    const user = normalizePaypalUser(SUPPORT.siteUser);
+    const btn = document.getElementById('support-btn');
+    if (!user) {
+        if (btn) btn.classList.add('hidden');
+        return;
+    }
+    if (btn) btn.classList.remove('hidden');
+    renderPresetLinks('support-presets', user);
+    const other = document.getElementById('support-other');
+    if (other) other.href = paypalLink(user, '');
+}
+
+/* ============================================================================
+   SECTION 8 — TOAST NOTIFICATIONS
+   ============================================================================ */
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 200);
+    }, 3000);
+}
+
+/* ============================================================================
+   SECTION 9 — EVENT LISTENERS & UI WIRING
+   ============================================================================ */
+function setupEventListeners() {
+    // Mobile navigation & sidebar toggles
+    document.getElementById('mobile-menu-btn')?.addEventListener('click', () => toggleSidebar(true));
+    document.getElementById('sidebar-overlay')?.addEventListener('click', () => toggleSidebar(false));
+    document.getElementById('mobile-settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
+    document.getElementById('settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
+
+    // Ad close buttons
+    document.getElementById('close-ad')?.addEventListener('click', requestDisableTopAd);
+    document.getElementById('confirm-disable-ads')?.addEventListener('click', () => {
+        dismissTopAd();
+        closeModal('disable-ads-modal');
+    });
+    document.getElementById('keep-ads')?.addEventListener('click', () => closeModal('disable-ads-modal'));
+    document.getElementById('sidebar-ad-close')?.addEventListener('click', dismissSidebarAd);
+    document.getElementById('mobile-ad-close')?.addEventListener('click', dismissSidebarAd);
+
+    // Popunder switch
+    document.getElementById('popunder-switch')?.addEventListener('change', (e) => setPopunderEnabled(e.target.checked));
+    document.getElementById('show-popunder-toggle')?.addEventListener('change', (e) => setPopunderEnabled(e.target.checked));
+
+    // Sidebar House buttons
+    document.getElementById('sidebar-house-btn')?.addEventListener('click', () => openCharacterModal());
+    document.getElementById('mobile-house-btn')?.addEventListener('click', () => openCharacterModal());
+
+    // Character management
+    document.getElementById('add-char-btn')?.addEventListener('click', () => openCharacterModal());
+    document.getElementById('save-char-btn')?.addEventListener('click', saveCharacterFromModal);
+    document.getElementById('search-input')?.addEventListener('input', (e) => filterCharacterList(e.target.value));
+
+    // Chat interactions
+    document.getElementById('send-btn')?.addEventListener('click', sendMessage);
+    document.getElementById('message-input')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    document.getElementById('clear-chat-btn')?.addEventListener('click', clearCurrentChat);
+
+    // Support modal
+    document.getElementById('support-btn')?.addEventListener('click', () => openModal('support-modal'));
+
+    // Settings actions
+    document.getElementById('save-settings-btn')?.addEventListener('click', saveSettingsFromModal);
+    document.getElementById('clear-data-btn')?.addEventListener('click', clearAllData);
+    document.getElementById('provider-select')?.addEventListener('change', (e) => handleProviderChange(e.target.value));
+
+    // Sliders live updates
+    setupSliderSync('temperature-slider', 'temperature-value');
+    setupSliderSync('top-p-slider', 'top-p-value');
+    setupSliderSync('top-k-slider', 'top-k-value');
+
+    // Generic close modal buttons
+    document.querySelectorAll('.close-modal-btn').forEach(btn => {
+        btn.addEventListener('click', () => closeModal(btn.getAttribute('data-modal')));
+    });
+
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal(overlay.id);
+        });
+    });
+}
+
+function toggleSidebar(open) {
+    document.getElementById('sidebar')?.classList.toggle('open', open);
+    document.getElementById('sidebar-overlay')?.classList.toggle('open', open);
+}
+
+function openModal(id) {
+    document.getElementById(id)?.classList.remove('hidden');
+    if (id === 'settings-modal') updateSettingsUI();
+}
+
+function closeModal(id) {
+    document.getElementById(id)?.classList.add('hidden');
+}
+
+function setupSliderSync(sliderId, valueId) {
+    const slider = document.getElementById(sliderId);
+    const span = document.getElementById(valueId);
+    if (!slider || !span) return;
+    slider.addEventListener('input', () => { span.textContent = slider.value; });
+}
+
+/* ============================================================================
+   SECTION 10 — CHARACTER RENDERING & LIST
+   ============================================================================ */
+function renderCharacterList() {
+    const listEl = document.getElementById('character-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    const query = (document.getElementById('search-input')?.value || '').toLowerCase();
+    const chars = appData.characters.filter(c => c.name.toLowerCase().includes(query) || (c.intro && c.intro.toLowerCase().includes(query)));
+
+    if (chars.length === 0) {
+        listEl.innerHTML = `<div class="empty-list">No characters found. Click + to create one.</div>`;
+        return;
+    }
+
+    for (const c of chars) {
+        const card = document.createElement('div');
+        card.className = `character-card ${c.id === currentCharacterId ? 'active' : ''}`;
+        card.onclick = () => selectCharacter(c.id);
+
+        const img = document.createElement('img');
+        img.src = c.avatar || defaultAvatarDataUri(c.name);
+        img.alt = c.name;
+
+        const details = document.createElement('div');
+        details.className = 'char-details';
+        details.innerHTML = `<h3>${escapeHtml(c.name)}</h3><p>${escapeHtml(c.intro || c.backstory || 'No intro')}</p>`;
+
+        card.appendChild(img);
+        card.appendChild(details);
+        listEl.appendChild(card);
+    }
+}
+
+function filterCharacterList(query) {
+    renderCharacterList();
+}
+
+function selectCharacter(id) {
+    currentCharacterId = id;
+    appData.lastCharacterId = id;
+    saveData();
+    renderAll();
+    toggleSidebar(false);
+}
+
+/* ============================================================================
+   SECTION 11 — CHAT & MESSAGES
+   ============================================================================ */
+function updateHeader() {
+    const char = getCharacter(currentCharacterId);
+    const avatarEl = document.getElementById('chat-avatar');
+    const nameEl = document.getElementById('chat-name');
+    const subtitleEl = document.getElementById('chat-subtitle');
+    const clearBtn = document.getElementById('clear-chat-btn');
+    const tipBtn = document.getElementById('tip-btn');
+
+    if (!char) {
+        avatarEl?.classList.add('hidden');
+        if (nameEl) nameEl.textContent = 'Select a character';
+        if (subtitleEl) subtitleEl.textContent = 'Pick from your hubs or create a new one';
+        clearBtn?.classList.add('hidden');
+        tipBtn?.classList.add('hidden');
+        return;
+    }
+
+    if (avatarEl) {
+        avatarEl.src = char.avatar || defaultAvatarDataUri(char.name);
+        avatarEl.classList.remove('hidden');
+    }
+    if (nameEl) nameEl.textContent = char.name;
+    if (subtitleEl) subtitleEl.textContent = char.intro || 'AI Character';
+    clearBtn?.classList.remove('hidden');
+
+    if (char.paypal) {
+        tipBtn?.classList.remove('hidden');
+        const user = normalizePaypalUser(char.paypal);
+        if (tipBtn && user) tipBtn.onclick = () => window.open(paypalLink(user, 3), '_blank');
+    } else {
+        tipBtn?.classList.add('hidden');
+    }
+}
+
+function renderMessages() {
+    const container = document.getElementById('messages-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const char = getCharacter(currentCharacterId);
+    if (!char) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-orb"></div>
+                <h3>No conversation yet</h3>
+                <p>Select or create a character to begin.</p>
+            </div>`;
+        return;
+    }
+
+    const messages = getChat(currentCharacterId);
+    if (messages.length === 0 && char.greetings) {
+        messages.push({ role: 'assistant', content: char.greetings });
+    }
+
+    if (messages.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-orb"></div>
+                <h3>Start chatting with ${escapeHtml(char.name)}</h3>
+                <p>Send a message below.</p>
+            </div>`;
+        return;
+    }
+
+    for (const msg of messages) {
+        const div = document.createElement('div');
+        div.className = `message ${msg.role === 'user' ? 'user' : 'assistant'}`;
+        div.innerHTML = `<div class="message-text">${formatMessage(msg.content)}</div>`;
+        container.appendChild(div);
+    }
+    container.scrollTop = container.scrollHeight;
+}
+
+function updateComposerState() {
+    const input = document.getElementById('message-input');
+    const btn = document.getElementById('send-btn');
+    const hasChar = !!getCharacter(currentCharacterId);
+    if (input) input.disabled = !hasChar || isGenerating;
+    if (btn) btn.disabled = !hasChar || isGenerating;
+}
+
+function clearCurrentChat() {
+    if (!currentCharacterId) return;
+    if (confirm('Clear all messages for this character?')) {
+        appData.chats[currentCharacterId] = [];
+        saveData();
+        renderMessages();
+        showToast('Chat cleared.', 'info');
+    }
+}
+
+/* ============================================================================
+   SECTION 12 — AI API CLIENT
+   ============================================================================ */
+async function sendMessage() {
+    const input = document.getElementById('message-input');
+    if (!input || isGenerating) return;
+    const text = input.value.trim();
+    if (!text || !currentCharacterId) return;
+
+    const char = getCharacter(currentCharacterId);
+    if (!char) return;
+
+    input.value = '';
+    const messages = getChat(currentCharacterId);
+    messages.push({ role: 'user', content: text });
+    saveData();
+    renderMessages();
+
+    isGenerating = true;
+    updateComposerState();
+    showTypingIndicator();
+
+    try {
+        const reply = await callAIProvider(char, messages);
+        messages.push({ role: 'assistant', content: reply });
+        saveData();
+    } catch (err) {
+        console.error('AI error:', err);
+        showToast(err.message || 'Failed to generate response', 'error');
+    } finally {
+        isGenerating = false;
+        hideTypingIndicator();
+        renderMessages();
+        updateComposerState();
+    }
+}
+
+function showTypingIndicator() {
+    const container = document.getElementById('messages-container');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.id = 'typing-indicator-el';
+    div.className = 'typing-indicator';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function hideTypingIndicator() {
+    document.getElementById('typing-indicator-el')?.remove();
+}
+
+async function callAIProvider(char, history) {
+    const { provider, apiKey, model, baseUrl, temperature, topP, topK, maxTokens } = appData.aiSettings;
+    const conf = PROVIDERS[provider] || PROVIDERS.custom;
+    const url = provider === 'custom' || provider === 'ollama' ? (baseUrl || conf.baseUrl) : conf.baseUrl;
+    const normModel = normalizeModelName(model || conf.model, provider);
+
+    const systemPrompt = `You are roleplaying as ${char.name}.
+Backstory & Personality: ${char.backstory || char.intro || 'An AI character.'}
+Guidelines: Stay completely in character. Never break character. Write engaging dialogue and actions in asterisks.`;
+
+    const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...history.slice(-HISTORY_LIMIT).map(m => ({ role: m.role, content: m.content }))
+    ];
+
+    let endpoint = url;
+    let headers = { 'Content-Type': 'application/json' };
+    let body = {};
+
+    if (provider === 'gemini') {
+        endpoint = `${url}/models/${normModel}:generateContent?key=${apiKey}`;
+        const contents = apiMessages.map(m => ({
+            role: m.role === 'system' ? 'user' : m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+        }));
+        body = { contents, generationConfig: { temperature, topP, topK, maxOutputTokens: maxTokens } };
+    } else if (provider === 'anthropic') {
+        endpoint = `${url}/messages`;
+        headers['x-api-key'] = apiKey;
+        headers['anthropic-version'] = '2023-06-01';
+        body = {
+            model: normModel,
+            system: systemPrompt,
+            messages: history.slice(-HISTORY_LIMIT).map(m => ({ role: m.role, content: m.content })),
+            max_tokens: maxTokens,
+            temperature
+        };
+    } else {
+        // OpenAI compatible (OpenRouter, Groq, OpenAI, Ollama, Custom)
+        endpoint = `${url}/chat/completions`;
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+        if (provider === 'openrouter') {
+            headers['HTTP-Referer'] = window.location.origin;
+            headers['X-Title'] = 'Hubs Chat';
+        }
+        body = {
+            model: normModel,
+            messages: apiMessages,
+            temperature,
+            top_p: topP,
+            max_tokens: maxTokens
+        };
+    }
+
+    const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`API error (${res.status}): ${errText.slice(0, 150)}`);
+    }
+
+    const data = await res.json();
+    let rawReply = '';
+
+    if (provider === 'gemini') {
+        rawReply = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } else if (provider === 'anthropic') {
+        rawReply = data.content?.[0]?.text || '';
+    } else {
+        rawReply = data.choices?.[0]?.message?.content || '';
+    }
+
+    return cleanAIResponse(rawReply, char.name);
+}
+
+/* ============================================================================
+   SECTION 13 — SETTINGS & CHARACTER MODALS
+   ============================================================================ */
+function updateSettingsUI() {
+    const s = appData.aiSettings;
+    setVal('provider-select', s.provider);
+    setVal('api-key-input', s.apiKey);
+    setVal('model-input', s.model);
+    setVal('base-url-input', s.baseUrl);
+    setVal('temperature-slider', s.temperature);
+    setText('temperature-value', s.temperature);
+    setVal('top-p-slider', s.topP);
+    setText('top-p-value', s.topP);
+    setVal('top-k-slider', s.topK);
+    setText('top-k-value', s.topK);
+    setVal('max-tokens-input', s.maxTokens);
+    setChecked('disable-reasoning-toggle', s.disableReasoning);
+    setChecked('show-ads-toggle', !appData.adDismissed);
+    setChecked('show-sidebar-toggle', !isSidebarAdHidden());
+    setChecked('show-popunder-toggle', isPopunderEnabled());
+
+    handleProviderChange(s.provider);
+}
+
+function handleProviderChange(provider) {
+    const conf = PROVIDERS[provider] || PROVIDERS.custom;
+    const baseUrlGroup = document.getElementById('base-url-group');
+    if (baseUrlGroup) {
+        baseUrlGroup.style.display = conf.editableUrl ? 'flex' : 'none';
+    }
+    const modelInput = document.getElementById('model-input');
+    if (modelInput && !modelInput.value) {
+        modelInput.value = conf.model;
+    }
+}
+
+function saveSettingsFromModal() {
+    const provider = val('provider-select');
+    appData.aiSettings = {
+        provider,
+        apiKey: val('api-key-input').trim(),
+        model: val('model-input').trim() || PROVIDERS[provider].model,
+        baseUrl: val('base-url-input').trim(),
+        temperature: parseFloat(val('temperature-slider')) || 0.7,
+        topP: parseFloat(val('top-p-slider')) || 0.95,
+        topK: parseInt(val('top-k-slider'), 10) || 40,
+        maxTokens: parseInt(val('max-tokens-input'), 10) || 1024,
+        disableReasoning: document.getElementById('disable-reasoning-toggle')?.checked ?? true
+    };
+
+    const showAds = document.getElementById('show-ads-toggle')?.checked ?? true;
+    if (showAds && appData.adDismissed) {
+        appData.adDismissed = false;
+        renderTopAd();
+    } else if (!showAds && !appData.adDismissed) {
+        dismissTopAd();
+    }
+
+    setSidebarAdHidden(!(document.getElementById('show-sidebar-toggle')?.checked ?? true));
+    setPopunderEnabled(document.getElementById('show-popunder-toggle')?.checked ?? true);
+
+    if (saveData()) {
+        showToast('Settings saved successfully.', 'success');
+        closeModal('settings-modal');
+    }
+}
+
+function clearAllData() {
+    if (confirm('Are you sure you want to delete all characters, chats, and settings? This cannot be undone.')) {
+        localStorage.removeItem(STORAGE_KEY);
+        appData = defaultAppData();
+        currentCharacterId = null;
+        renderAll();
+        closeModal('settings-modal');
+        showToast('All data cleared.', 'info');
+    }
+}
+
+function openCharacterModal() {
+    setVal('char-name', '');
+    setVal('char-intro', '');
+    setVal('char-greetings', '');
+    setVal('char-backstory', '');
+    setVal('char-paypal', '');
+    setVal('char-tags', '');
+    setChecked('char-private', false);
+    pendingImportAvatar = null;
+    openModal('character-modal');
+}
+
+async function saveCharacterFromModal() {
+    const name = val('char-name').trim();
+    if (!name) {
+        showToast('Character name is required.', 'error');
+        return;
+    }
+
+    let avatar = pendingImportAvatar;
+    const fileInput = document.getElementById('char-avatar');
+    if (fileInput && fileInput.files && fileInput.files[0]) {
+        try {
+            avatar = await resizeImageToDataURL(fileInput.files[0], 256);
+        } catch (e) {
+            console.error('Avatar resize failed', e);
+        }
+    }
+
+    const newChar = {
+        id: newId(),
+        name,
+        gender: val('char-gender'),
+        intro: val('char-intro').trim(),
+        greetings: val('char-greetings').trim(),
+        backstory: val('char-backstory').trim(),
+        paypal: val('char-paypal').trim(),
+        private: document.getElementById('char-private')?.checked || false,
+        tags: val('char-tags').split(',').map(t => t.trim()).filter(Boolean),
+        avatar: avatar || defaultAvatarDataUri(name)
+    };
+
+    appData.characters.push(newChar);
+    currentCharacterId = newChar.id;
+    appData.lastCharacterId = newChar.id;
+    saveData();
+    renderAll();
+    closeModal('character-modal');
+    showToast(`Created character ${name}!`, 'success');
+}
