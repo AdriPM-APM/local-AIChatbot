@@ -1,5 +1,6 @@
 /* ============================================================================
-   Hubs — app.js (complete rewrite)
+   Hubs — app.js (recoded)
+   Chat, AI providers, characters, settings, and ad placements.
    ============================================================================ */
 
 /* ============================================================================
@@ -7,6 +8,8 @@
    ============================================================================ */
 const STORAGE_KEY = 'aiCharacterAppData';
 const HISTORY_LIMIT = 40;
+const SIDEBAR_AD_KEY = 'hubs_sidebar_ad_dismissed';   // '1' = hidden. Read by anti-adblock.js
+const POPUNDER_KEY = 'hubs_popunder_enabled';         // '0' = off, anything else = on
 
 const PROVIDERS = {
     openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'google/gemma-3-27b-it:free', editableUrl: false },
@@ -17,6 +20,23 @@ const PROVIDERS = {
     ollama:     { baseUrl: 'http://localhost:11434/v1', model: 'llama3.2', editableUrl: true },
     custom:     { baseUrl: '', model: '', editableUrl: true }
 };
+
+/* Adsterra. The 300x250 sidebar code lives inline in index.html (it must, for document.write). */
+const ADSTERRA = {
+    topBanner: {
+        containerId: 'container-a3f099d87b664187036e6176973d0255',
+        scriptSrc: 'https://archeryconditionssniff.com/a3f099d87b664187036e6176973d0255/invoke.js'
+    },
+    popunder: {
+        scriptSrc: 'https://archeryconditionssniff.com/a1/e6/0b/a1e60b63132f321aa7152ef962227e12.js'
+    }
+};
+
+/* Every 300x250 placement. "house" is the built-in card shown when the ad slot stays empty. */
+const SIDEBAR_PLACEMENTS = [
+    { wrap: 'sidebar-ad', slot: 'sidebar-ad-slot', house: 'sidebar-house', btn: 'sidebar-house-btn', close: 'sidebar-ad-close' },
+    { wrap: 'mobile-ad',  slot: 'mobile-ad-slot',  house: 'mobile-house',  btn: 'mobile-house-btn',  close: 'mobile-ad-close' }
+];
 
 function defaultAppData() {
     return {
@@ -31,7 +51,7 @@ function defaultAppData() {
             maxTokens: 1024,
             disableReasoning: true
         },
-        adDismissed: false,
+        adDismissed: false,          // top banner closed by the user
         characters: [],
         chats: {},
         lastCharacterId: null
@@ -42,34 +62,11 @@ let appData = defaultAppData();
 let currentCharacterId = null;
 let isGenerating = false;
 let pendingImportAvatar = null;
-
-/* Adsterra config */
-const ADSTERRA_CONFIG = {
-    topBanner: {
-        enabled: true,
-        containerId: 'container-a3f099d87b664187036e6176973d0255',
-        scriptSrc: 'https://archeryconditionssniff.com/a3f099d87b664187036e6176973d0255/invoke.js'
-    },
-    sidebarBanner: {
-        enabled: true,
-        key: 'a9543a4355279a22639348e9331bf68e',
-        width: 300,
-        height: 250,
-        invokeUrl: 'https://archeryconditionssniff.com'
-    },
-    popunder: {
-        enabled: true,
-        scriptSrc: 'https://archeryconditionssniff.com/a1/e6/0b/a1e60b63132f321aa7152ef962227e12.js'
-    }
-};
-
-const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
-const POPUNDER_LAST_LOAD_KEY = 'hubs_popunder_last_load_timestamp';
-const POPUNDER_INTERVAL_MS = 20 * 60 * 1000;
-const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
+let topBannerLoaded = false;
+let popunderLoaded = false;
 
 /* ============================================================================
-   SECTION 2 — BOOTSTRAP (each step fail-isolated)
+   SECTION 2 — BOOTSTRAP
    ============================================================================ */
 document.addEventListener('DOMContentLoaded', () => {
     const safe = (name, fn) => {
@@ -78,8 +75,8 @@ document.addEventListener('DOMContentLoaded', () => {
     safe('loadData', loadData);
     safe('setupEventListeners', setupEventListeners);
     safe('restoreSession', restoreSession);
-    safe('updateSettingsUI', updateSettingsUI);
     safe('initAds', initAds);
+    safe('updateSettingsUI', updateSettingsUI);
 });
 
 function restoreSession() {
@@ -160,7 +157,7 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
-/* PolyBuzz-style formatting: **bold**, *action in grey italics* */
+/* PolyBuzz-style formatting: **bold** and *action in grey italics*. Input is escaped first. */
 function formatMessage(text) {
     return escapeHtml(text)
         .replace(/\*\*(.+?)\*\*/gs, '<strong>$1</strong>')
@@ -191,20 +188,12 @@ function clamp(n, min, max) {
     return Math.min(max, Math.max(min, n));
 }
 
-function fileToDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result);
-        r.onerror = () => reject(r.error);
-        r.readAsDataURL(file);
-    });
-}
-
 /* Shrinks an image so avatars don't fill localStorage. */
 function resizeImageToDataURL(source, max = 256) {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        const url = typeof source === 'string' ? source : URL.createObjectURL(source);
+        const isBlob = typeof source !== 'string';
+        const url = isBlob ? URL.createObjectURL(source) : source;
         img.onload = () => {
             try {
                 const scale = Math.min(1, max / Math.max(img.width, img.height));
@@ -216,11 +205,11 @@ function resizeImageToDataURL(source, max = 256) {
             } catch (e) {
                 reject(e);
             } finally {
-                if (typeof source !== 'string') URL.revokeObjectURL(url);
+                if (isBlob) URL.revokeObjectURL(url);
             }
         };
         img.onerror = () => {
-            if (typeof source !== 'string') URL.revokeObjectURL(url);
+            if (isBlob) URL.revokeObjectURL(url);
             reject(new Error('Could not read image'));
         };
         img.src = url;
@@ -258,7 +247,7 @@ function normalizeModelName(model, provider) {
 }
 
 /* ============================================================================
-   SECTION 6 — RESPONSE SANITIZER (strips leaked reasoning / labels)
+   SECTION 6 — RESPONSE SANITIZER (strips leaked reasoning and labels)
    ============================================================================ */
 function cleanAIResponse(raw, characterName) {
     if (!raw) return '';
@@ -323,118 +312,54 @@ function cleanAIResponse(raw, characterName) {
 }
 
 /* ============================================================================
-   SECTION 7 — ADS & POPUNDER
+   SECTION 7 — ADS
+   Top banner: dynamic container script (works).
+   Popunder: loaded on page load when enabled; toggling off applies on next load.
+   Sidebar and mobile 300x250: inline Adsterra code, with a house card when empty.
    ============================================================================ */
-let popunderOn = true;
-let popunderScriptLoaded = false;
-let topBannerLoaded = false;
-let sidebarBannerLoaded = false;
 
-function isPopunderHiddenThisSession() {
-    try { return sessionStorage.getItem(POPUNDER_SESSION_KEY) === '1'; }
-    catch (_) { return false; }
-}
-function markPopunderHidden() {
-    try { sessionStorage.setItem(POPUNDER_SESSION_KEY, '1'); } catch (_) {}
-}
-function markPopunderVisible() {
-    try { sessionStorage.removeItem(POPUNDER_SESSION_KEY); } catch (_) {}
+/* ---- Top banner ---- */
+function renderTopAd() {
+    const banner = document.getElementById('ad-banner');
+    if (!banner) return;
+    if (appData.adDismissed) {
+        banner.style.display = 'none';
+        return;
+    }
+    banner.style.display = 'flex';
+    loadTopBannerScript();
 }
 
-function loadPopunderOnce() {
-    if (!popunderOn) return;
-    const cfg = ADSTERRA_CONFIG.popunder;
-    if (!cfg.enabled || popunderScriptLoaded) return;
-
-    const s = document.createElement('script');
-    s.id = 'adsterra-popunder-script';
-    s.async = true;
-    s.setAttribute('data-cfasync', 'false');
-    s.src = cfg.scriptSrc;
-    s.onerror = () => console.warn('[ads] Popunder blocked or failed to load.');
-    document.body.appendChild(s);
-    popunderScriptLoaded = true;
-}
-
-function updatePopunderUI() {
-    const pill = document.getElementById('popunder-pill');
-    const state = document.getElementById('popunder-state');
-    const switchEl = document.getElementById('popunder-switch');
-    const settingsToggle = document.getElementById('show-popunder-toggle');
-
-    if (pill) pill.classList.remove('hidden');
-    pill?.classList.toggle('off', !popunderOn);
-    if (state) state.textContent = popunderOn ? 'ON' : 'OFF';
-    if (switchEl) switchEl.checked = popunderOn;
-    if (settingsToggle) settingsToggle.checked = popunderOn;
-}
-
-function turnPopunderOn() {
-    popunderOn = true;
-    markPopunderVisible();
-    loadPopunderOnce();
-    updatePopunderUI();
-}
-function turnPopunderOff() {
-    popunderOn = false;
-    markPopunderHidden();
-    updatePopunderUI();
-}
-
-function loadAdsterraTopBanner() {
-    const cfg = ADSTERRA_CONFIG.topBanner;
-    const slot = document.getElementById(cfg.containerId);
+function loadTopBannerScript() {
+    if (topBannerLoaded) return;
+    const slot = document.getElementById(ADSTERRA.topBanner.containerId);
     const fallback = document.getElementById('ad-fallback');
     if (!slot) return;
 
-    if (!cfg.enabled) {
-        slot.innerHTML = '';
-        if (fallback) fallback.style.display = 'inline';
-        return;
-    }
-    if (topBannerLoaded) return;
     topBannerLoaded = true;
-
     slot.innerHTML = '';
-    slot.style.display = '';
     const s = document.createElement('script');
-    s.type = 'text/javascript';
     s.async = true;
     s.setAttribute('data-cfasync', 'false');
-    s.src = cfg.scriptSrc;
+    s.src = ADSTERRA.topBanner.scriptSrc;
     s.onload = () => { if (fallback) fallback.style.display = 'none'; };
     s.onerror = () => {
-        if (fallback) fallback.style.display = 'inline';
         topBannerLoaded = false;
-        slot.style.display = 'none';
+        if (fallback) fallback.style.display = 'inline';
     };
     slot.appendChild(s);
 }
 
-function renderTopAdBanner() {
-    const banner = document.getElementById('ad-banner');
-    if (!banner) return;
-    if (appData.adDismissed) { banner.style.display = 'none'; return; }
-    banner.style.display = 'flex';
-    loadAdsterraTopBanner();
-}
-
-function actuallyDismissTopAd() {
+/* Hides the banner but keeps its wrapper, so the ✕ button and the re-enable path still work. */
+function dismissTopAd() {
     appData.adDismissed = true;
     saveData();
     const banner = document.getElementById('ad-banner');
     if (banner) banner.style.display = 'none';
-    // Only clear the ad slot — never the banner itself (it holds the close button).
-    const slot = document.getElementById(ADSTERRA_CONFIG.topBanner.containerId);
+    const slot = document.getElementById(ADSTERRA.topBanner.containerId);
     if (slot) slot.innerHTML = '';
     topBannerLoaded = false;
     setChecked('show-ads-toggle', false);
-    try {
-        document.querySelectorAll(
-            'body > iframe[src*="archeryconditionssniff"],' +
-            'body > iframe[src*="highperformanceformat"]'
-        ).forEach(el => el.remove());
-    } catch (_) {}
     showToast('Top banner disabled.', 'info');
 }
 
@@ -443,129 +368,101 @@ function requestDisableTopAd() {
     openModal('disable-ads-modal');
 }
 
-function isSidebarAdDismissed() {
-    try { return localStorage.getItem(SIDEBAR_AD_DISMISSED_KEY) === '1'; }
+/* ---- Popunder ---- */
+function isPopunderEnabled() {
+    try { return localStorage.getItem(POPUNDER_KEY) !== '0'; }
+    catch (_) { return true; }
+}
+
+function loadPopunder() {
+    if (popunderLoaded || !isPopunderEnabled()) return;
+    popunderLoaded = true;
+    const s = document.createElement('script');
+    s.async = true;
+    s.setAttribute('data-cfasync', 'false');
+    s.src = ADSTERRA.popunder.scriptSrc;
+    s.onerror = () => {
+        popunderLoaded = false;
+        console.warn('[ads] Popunder blocked or failed to load.');
+    };
+    document.body.appendChild(s);
+}
+
+function setPopunderEnabled(on) {
+    try { localStorage.setItem(POPUNDER_KEY, on ? '1' : '0'); } catch (_) {}
+    if (on) {
+        loadPopunder();
+        showToast('Popunder on.', 'success');
+    } else if (popunderLoaded) {
+        showToast('Popunder will stay off after the next page load.', 'info');
+    }
+    updatePopunderUI();
+}
+
+function updatePopunderUI() {
+    const on = isPopunderEnabled();
+    const pill = document.getElementById('popunder-pill');
+    if (pill) {
+        pill.classList.remove('hidden');
+        pill.classList.toggle('off', !on);
+    }
+    setText('popunder-state', on ? 'ON' : 'OFF');
+    setChecked('popunder-switch', on);
+    setChecked('show-popunder-toggle', on);
+}
+
+/* ---- Sidebar and mobile 300x250 ---- */
+function isSidebarAdHidden() {
+    try { return localStorage.getItem(SIDEBAR_AD_KEY) === '1'; }
     catch (_) { return false; }
-}
-function markSidebarAdDismissed() {
-    try { localStorage.setItem(SIDEBAR_AD_DISMISSED_KEY, '1'); } catch (_) {}
-}
-
-/* The sidebar 300x250 ad is the official Adsterra snippet placed directly in
-   index.html (inline scripts let document.write work). Nothing to inject here;
-   just hide the placeholder label. */
-const SIDEBAR_AD_IDS = ['sidebar-ad', 'mobile-ad'];
-const SIDEBAR_AD_SLOTS = [
-    { slot: 'sidebar-ad-slot', fallback: 'sidebar-ad-fallback' },
-    { slot: 'mobile-ad-slot', fallback: 'mobile-ad-fallback' }
-];
-let sidebarAdChecksScheduled = false;
-
-/* Shows the "Sponsored" label only while the ad hasn't rendered, so the box is never blank. */
-function updateSidebarAdFallback() {
-    for (const { slot, fallback } of SIDEBAR_AD_SLOTS) {
-        const slotEl = document.getElementById(slot);
-        const fb = document.getElementById(fallback);
-        if (!slotEl || !fb) continue;
-        fb.style.display = slotEl.querySelector('iframe, ins') ? 'none' : 'inline';
-    }
-}
-
-/* The ad code lives in index.html; this only keeps the label honest and re-checks it. */
-function loadAdsterraSidebarBanner() {
-    updateSidebarAdFallback();
-    if (!sidebarAdChecksScheduled) {
-        sidebarAdChecksScheduled = true;
-        setTimeout(updateSidebarAdFallback, 3000);
-        setTimeout(updateSidebarAdFallback, 8000);
-    }
-}
-
-/* Single source of truth for showing/hiding both sidebar placements. */
-function applySidebarAdVisibility() {
-    const hidden = isSidebarAdDismissed();
-    for (const id of SIDEBAR_AD_IDS) {
-        document.getElementById(id)?.classList.toggle('hidden', hidden);
-    }
-    if (!hidden) loadAdsterraSidebarBanner();
 }
 
 function setSidebarAdHidden(hidden) {
-    try { localStorage.setItem(SIDEBAR_AD_DISMISSED_KEY, hidden ? '1' : '0'); } catch (_) {}
-    applySidebarAdVisibility();
+    try { localStorage.setItem(SIDEBAR_AD_KEY, hidden ? '1' : '0'); } catch (_) {}
+    applySidebarVisibility();
+    setChecked('show-sidebar-toggle', !hidden);
 }
 
-function renderSidebarAd() {
-    applySidebarAdVisibility();
+function applySidebarVisibility() {
+    const hidden = isSidebarAdHidden();
+    for (const p of SIDEBAR_PLACEMENTS) {
+        document.getElementById(p.wrap)?.classList.toggle('hidden', hidden);
+    }
+    if (!hidden) refreshSidebarHouse();
 }
 
-/* Closing hides the ad but keeps its code, so Settings can bring it back. */
+/* Shows the house card when Adsterra has not written an iframe into the slot; shows the ad otherwise. */
+function refreshSidebarHouse() {
+    for (const p of SIDEBAR_PLACEMENTS) {
+        const slot = document.getElementById(p.slot);
+        const house = document.getElementById(p.house);
+        if (!slot || !house) continue;
+        const hasAd = !!slot.querySelector('iframe, ins');
+        slot.hidden = !hasAd;
+        house.hidden = hasAd;
+    }
+}
+
 function dismissSidebarAd() {
     setSidebarAdHidden(true);
     showToast('Sidebar ad hidden. Turn it back on in Settings.', 'info');
 }
 
-function wireCloseButtons() {
-    const wire = (btn, handler) => {
-        if (!btn || btn.dataset.wired === '1') return;
-        btn.dataset.wired = '1';
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handler();
-        });
-    };
-    wire(document.getElementById('close-ad'), requestDisableTopAd);
-    wire(document.getElementById('sidebar-ad-close'), dismissSidebarAd);
-    wire(document.getElementById('mobile-ad-close'), dismissSidebarAd);
-}
-
 function initAds() {
-    popunderOn = !isPopunderHiddenThisSession();
-    loadPopunderOnce();
-    renderTopAdBanner();
-    renderSidebarAd();
-    wireCloseButtons();
+    renderTopAd();
+    applySidebarVisibility();
 
-    document.getElementById('confirm-disable-ads')?.addEventListener('click', () => {
-        actuallyDismissTopAd();
-        closeModal('disable-ads-modal');
-    });
-    document.getElementById('keep-ads')?.addEventListener('click', () => {
-        closeModal('disable-ads-modal');
-    });
-
-    const bannerToggle = document.getElementById('show-ads-toggle');
-    if (bannerToggle) {
-        bannerToggle.checked = !appData.adDismissed;
-        bannerToggle.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                appData.adDismissed = false;
-                saveData();
-                topBannerLoaded = false;
-                renderTopAdBanner();
-            } else {
-                e.target.checked = true;
-                requestDisableTopAd();
-            }
-        });
+    /* Re-check the slots when the ad writes into them (no polling needed). */
+    if ('MutationObserver' in window) {
+        const mo = new MutationObserver(refreshSidebarHouse);
+        for (const p of SIDEBAR_PLACEMENTS) {
+            const slot = document.getElementById(p.slot);
+            if (slot) mo.observe(slot, { childList: true, subtree: true });
+        }
     }
+    [4000, 10000, 20000].forEach(ms => setTimeout(refreshSidebarHouse, ms));
 
-    const sidebarToggle = document.getElementById('show-sidebar-toggle');
-    if (sidebarToggle) {
-        sidebarToggle.checked = !isSidebarAdDismissed();
-        sidebarToggle.addEventListener('change', (e) => setSidebarAdHidden(!e.target.checked));
-    }
-
-    document.getElementById('popunder-switch')?.addEventListener('change', (e) => {
-        if (e.target.checked) turnPopunderOn();
-        else turnPopunderOff();
-    });
-    document.getElementById('show-popunder-toggle')?.addEventListener('change', (e) => {
-        if (e.target.checked) turnPopunderOn();
-        else turnPopunderOff();
-    });
-
+    loadPopunder();
     updatePopunderUI();
 }
 
@@ -726,7 +623,7 @@ async function saveCharacter() {
     showToast(`${name} created`, 'success');
 }
 
-/* ---- SillyTavern / TavernAI PNG card import (tEXt chunk "chara" / "ccv3") ---- */
+/* ---- SillyTavern / TavernAI PNG card import (tEXt chunks "chara" or "ccv3") ---- */
 function latin1(bytes) {
     let s = '';
     for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
@@ -740,8 +637,8 @@ async function readCharaFromPng(file) {
 
     const view = new DataView(buf.buffer);
     let offset = 8;
-    let v2 = null;
     let v1 = null;
+    let v2 = null;
 
     while (offset + 8 <= buf.length) {
         const len = view.getUint32(offset);
@@ -877,8 +774,8 @@ function setGenerating(v) {
     renderMessages();
 }
 
-/* Builds the history sent to the model: skips error bubbles, caps length,
-   merges consecutive same-role turns, and starts with a user turn. */
+/* Builds the history sent to the model: skips error bubbles, caps length, merges
+   consecutive same-role turns, and always starts with a user turn. */
 function buildHistory(chat) {
     const usable = chat.filter(m => !m.error && m.content && m.content.trim());
     const recent = usable.slice(-HISTORY_LIMIT);
@@ -939,12 +836,11 @@ async function sendMessage() {
     } catch (err) {
         console.error('[chat] request failed:', err);
         showToast(`AI error: ${err.message}`, 'error');
-        // Keep the user's message; the error bubble is kept out of the model's history.
+        // The error bubble is kept out of the model's history.
         chat.push({ role: 'assistant', content: `⚠️ ${err.message}`, ts: Date.now(), error: true });
         saveData();
     } finally {
         setGenerating(false);
-        updateComposerState();
     }
 }
 
@@ -1016,7 +912,9 @@ async function fetchWithTimeout(url, opts = {}, ms = 60000) {
 async function readError(res) {
     try {
         const j = await res.json();
-        const msg = (j && j.error && j.error.message) || (typeof j?.error === 'string' ? j.error : '') || j?.message;
+        const msg = (j && j.error && j.error.message)
+            || (typeof j?.error === 'string' ? j.error : '')
+            || j?.message;
         return msg || `HTTP ${res.status}`;
     } catch (_) {
         return `HTTP ${res.status}`;
@@ -1091,7 +989,7 @@ async function callAnthropic(history, system, cfg) {
     return text;
 }
 
-/* OpenAI, Groq, OpenRouter, Ollama and any OpenAI-compatible endpoint */
+/* OpenAI, Groq, OpenRouter, Ollama, and any OpenAI-compatible endpoint */
 async function callOpenAICompatible(history, system, cfg) {
     const headers = { 'Content-Type': 'application/json' };
     if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
@@ -1171,10 +1069,9 @@ function updateSettingsUI() {
 
     setChecked('disable-reasoning-toggle', s.disableReasoning);
     setChecked('show-ads-toggle', !appData.adDismissed);
-    setChecked('show-sidebar-toggle', !isSidebarAdDismissed());
-    setChecked('show-popunder-toggle', popunderOn);
-    updateBaseUrlVisibility(s.provider);
+    setChecked('show-sidebar-toggle', !isSidebarAdHidden());
     updatePopunderUI();
+    updateBaseUrlVisibility(s.provider);
 }
 
 function saveSettings() {
@@ -1237,12 +1134,11 @@ async function testAndAutoSelectModel() {
 }
 
 function clearAllData() {
-    if (!window.confirm('Delete all characters, chats and settings? This cannot be undone.')) return;
+    if (!window.confirm('Delete all characters, chats, and settings? This cannot be undone.')) return;
     try {
         localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(POPUNDER_LAST_LOAD_KEY);
-        localStorage.removeItem(SIDEBAR_AD_DISMISSED_KEY);
-        sessionStorage.removeItem(POPUNDER_SESSION_KEY);
+        localStorage.removeItem(SIDEBAR_AD_KEY);
+        localStorage.removeItem(POPUNDER_KEY);
     } catch (_) {}
     location.reload();
 }
@@ -1251,12 +1147,12 @@ function clearAllData() {
    SECTION 13 — EVENT LISTENERS
    ============================================================================ */
 function setupEventListeners() {
-    const overlay = document.getElementById('sidebar-overlay');
-
+    /* Drawer */
     document.getElementById('mobile-menu-btn')?.addEventListener('click', () => setDrawer(true));
     document.getElementById('mobile-settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
-    overlay?.addEventListener('click', () => setDrawer(false));
+    document.getElementById('sidebar-overlay')?.addEventListener('click', () => setDrawer(false));
 
+    /* Characters and chat */
     document.getElementById('add-char-btn')?.addEventListener('click', () => openModal('character-modal'));
     document.getElementById('settings-btn')?.addEventListener('click', () => openModal('settings-modal'));
     document.getElementById('send-btn')?.addEventListener('click', sendMessage);
@@ -1276,6 +1172,7 @@ function setupEventListeners() {
         updateComposerState();
     });
 
+    /* Modals */
     document.querySelectorAll('.close-modal-btn').forEach(btn => {
         btn.addEventListener('click', () => closeModal(btn.dataset.modal));
     });
@@ -1288,6 +1185,7 @@ function setupEventListeners() {
         setDrawer(false);
     });
 
+    /* Settings */
     document.getElementById('provider-select')?.addEventListener('change', (e) => {
         const p = e.target.value;
         const d = PROVIDERS[p] || PROVIDERS.gemini;
@@ -1296,7 +1194,6 @@ function setupEventListeners() {
         updateBaseUrlVisibility(p);
         setText('model-test-result', '');
     });
-
     document.getElementById('save-settings-btn')?.addEventListener('click', saveSettings);
     document.getElementById('clear-data-btn')?.addEventListener('click', clearAllData);
     document.getElementById('test-models-btn')?.addEventListener('click', testAndAutoSelectModel);
@@ -1314,13 +1211,52 @@ function setupEventListeners() {
         saveData();
     });
 
-    document.getElementById('char-avatar')?.addEventListener('change', () => {
-        pendingImportAvatar = null;
-    });
+    /* Character creation */
+    document.getElementById('char-avatar')?.addEventListener('change', () => { pendingImportAvatar = null; });
     document.getElementById('save-char-btn')?.addEventListener('click', saveCharacter);
     document.getElementById('import-png')?.addEventListener('change', (e) => {
         const f = e.target.files?.[0];
         if (f) handlePngImport(f, e.target);
     });
 
+    /* Top banner */
+    document.getElementById('close-ad')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        requestDisableTopAd();
+    });
+    document.getElementById('confirm-disable-ads')?.addEventListener('click', () => {
+        dismissTopAd();
+        closeModal('disable-ads-modal');
+    });
+    document.getElementById('keep-ads')?.addEventListener('click', () => closeModal('disable-ads-modal'));
+    document.getElementById('show-ads-toggle')?.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            appData.adDismissed = false;
+            saveData();
+            topBannerLoaded = false;
+            renderTopAd();
+            showToast('Top banner enabled.', 'success');
+        } else {
+            e.target.checked = true;
+            requestDisableTopAd();
+        }
+    });
+
+    /* Sidebar and mobile 300x250 */
+    for (const p of SIDEBAR_PLACEMENTS) {
+        document.getElementById(p.close)?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dismissSidebarAd();
+        });
+        document.getElementById(p.btn)?.addEventListener('click', () => openModal('character-modal'));
+    }
+    document.getElementById('show-sidebar-toggle')?.addEventListener('change', (e) => {
+        setSidebarAdHidden(!e.target.checked);
+    });
+
+    /* Popunder (sidebar pill and settings switch share one preference) */
+    document.getElementById('popunder-switch')?.addEventListener('change', (e) => setPopunderEnabled(e.target.checked));
+    document.getElementById('show-popunder-toggle')?.addEventListener('change', (e) => setPopunderEnabled(e.target.checked));
 }
