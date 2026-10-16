@@ -49,6 +49,8 @@ const ADSTERRA_CONFIG = {
 };
 
 const POPUNDER_SESSION_KEY = 'hubs_popunder_hidden_session';
+const POPUNDER_LAST_LOAD_KEY = 'hubs_popunder_last_load_timestamp';
+const POPUNDER_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes interval
 const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 
 /* ============================================================================
@@ -139,7 +141,7 @@ function normalizeModelName(model, provider) {
 }
 
 /* ============================================================================
-   SECTION 6 — AGGRESSIVE RESPONSE SANITIZER
+   SECTION 6 — RESPONSE SANITIZER
    ============================================================================ */
 function cleanAIResponse(raw, characterName) {
     if (!raw) return '';
@@ -197,14 +199,10 @@ function cleanAIResponse(raw, characterName) {
 }
 
 /* ============================================================================
-   SECTION 7 — ADS & POPUNDER (UPDATED)
+   SECTION 7 — ADS & POPUNDER RECODED
    ============================================================================ */
 let popunderOn = true;
 let popunderScriptLoaded = false;
-
-const POPUNDER_LAST_LOAD_KEY = 'hubs_popunder_last_load_timestamp';
-const POPUNDER_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes cooldown
-const SIDEBAR_AD_DISMISSED_KEY = 'hubs_sidebar_ad_dismissed';
 
 const ALLOWED_TARGETS = 'button, input, textarea, select, label, a, [data-no-ad-block]';
 
@@ -223,7 +221,6 @@ function loadPopunderOnce() {
     const cfg = ADSTERRA_CONFIG.popunder;
     if (!cfg.enabled) return;
 
-    // Check if 20 minutes have passed since the last popunder
     const lastLoad = localStorage.getItem(POPUNDER_LAST_LOAD_KEY);
     const now = Date.now();
     if (lastLoad && (now - parseInt(lastLoad, 10) < POPUNDER_INTERVAL_MS)) {
@@ -238,11 +235,10 @@ function loadPopunderOnce() {
     s.async = true;
     s.setAttribute('data-cfasync', 'false');
     s.src = cfg.scriptSrc;
-    s.onerror = () => console.warn('[ads] popunder failed to load');
+    s.onerror = () => console.warn('[ads] Popunder blocked or failed to load.');
     document.body.appendChild(s);
     popunderScriptLoaded = true;
-    
-    // Save current timestamp for the 20-minute interval
+
     localStorage.setItem(POPUNDER_LAST_LOAD_KEY, now.toString());
 }
 
@@ -301,7 +297,6 @@ function loadAdsterraTopBanner() {
         if (fallback) fallback.style.display = 'inline';
         return;
     }
-    if (fallback) fallback.style.display = 'none';
     slot.innerHTML = '';
 
     const s = document.createElement('script');
@@ -309,7 +304,10 @@ function loadAdsterraTopBanner() {
     s.async = true;
     s.setAttribute('data-cfasync', 'false');
     s.src = cfg.scriptSrc;
+
+    s.onload = () => { if (fallback) fallback.style.display = 'none'; };
     s.onerror = () => { if (fallback) fallback.style.display = 'inline'; };
+
     slot.appendChild(s);
 }
 
@@ -333,7 +331,7 @@ function actuallyDismissTopAd() {
             'body > div[id^="container-"]'
         ).forEach(el => el.remove());
     } catch (_) {}
-    showToast('Top banner disabled. Popunder & sidebar ad stay on to support Hubs.', 'info');
+    showToast('Top banner disabled.', 'info');
 }
 
 function requestDisableTopAd() {
@@ -360,10 +358,9 @@ function loadAdsterraSidebarBanner() {
         if (fallback) fallback.style.display = 'inline';
         return;
     }
-    if (fallback) fallback.style.display = 'none';
+
     slot.innerHTML = '';
 
-    // Assign atOptions and load sidebar banner script reliably
     window.atOptions = {
         key: cfg.key,
         format: 'iframe',
@@ -376,7 +373,10 @@ function loadAdsterraSidebarBanner() {
     s.type = 'text/javascript';
     s.async = true;
     s.src = `${cfg.invokeUrl}/${cfg.key}/invoke.js`;
+
+    s.onload = () => { if (fallback) fallback.style.display = 'none'; };
     s.onerror = () => { if (fallback) fallback.style.display = 'inline'; };
+
     slot.appendChild(s);
 }
 
@@ -498,7 +498,8 @@ function setupEventListeners() {
     });
 
     document.getElementById('provider-select')?.addEventListener('change', (e) => {
-        document.getElementById('base-url-group').style.display = e.target.value === 'custom' ? 'flex' : 'none';
+        const baseUrlGrp = document.getElementById('base-url-group');
+        if (baseUrlGrp) baseUrlGrp.style.display = e.target.value === 'custom' ? 'flex' : 'none';
         updateModelInput(e.target.value);
     });
     document.getElementById('save-settings-btn')?.addEventListener('click', saveSettings);
@@ -506,16 +507,20 @@ function setupEventListeners() {
     document.getElementById('test-models-btn')?.addEventListener('click', testAndAutoSelectModel);
 
     document.getElementById('temperature-slider')?.addEventListener('input', (e) => {
-        document.getElementById('temperature-value').textContent = e.target.value;
+        const el = document.getElementById('temperature-value');
+        if (el) el.textContent = e.target.value;
     });
     document.getElementById('top-p-slider')?.addEventListener('input', (e) => {
-        document.getElementById('top-p-value').textContent = e.target.value;
+        const el = document.getElementById('top-p-value');
+        if (el) el.textContent = e.target.value;
     });
     document.getElementById('top-k-slider')?.addEventListener('input', (e) => {
-        document.getElementById('top-k-value').textContent = e.target.value;
+        const el = document.getElementById('top-k-value');
+        if (el) el.textContent = e.target.value;
     });
     document.getElementById('max-tokens-input')?.addEventListener('input', (e) => {
-        document.getElementById('max-tokens-value').textContent = e.target.value;
+        const el = document.getElementById('max-tokens-value');
+        if (el) el.textContent = e.target.value;
     });
 
     document.getElementById('disable-reasoning-toggle')?.addEventListener('change', (e) => {
@@ -524,8 +529,6 @@ function setupEventListeners() {
     });
 
     document.getElementById('save-char-btn')?.addEventListener('click', saveCharacter);
-    document.getElementById('import-png')?.addEventListener('change', handlePngImport);
-
     document.getElementById('search-input')?.addEventListener('input', (e) => {
         renderCharacterList(e.target.value);
     });
@@ -543,655 +546,4 @@ function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = 'toast';
     const icons = { info: 'ℹ️', error: '⚠️', success: '✅' };
-    toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${escapeHtml(message)}</span>`;
-    container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transition = 'opacity 0.3s';
-        setTimeout(() => toast.remove(), 320);
-    }, 4000);
-}
-
-function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
-}
-
-function updateModelInput(provider) {
-    const modelInput = document.getElementById('model-input') || document.getElementById('model-select');
-    if (!modelInput) return;
-    modelInput.value = appData.aiSettings.model || '';
-}
-
-function updateSettingsUI() {
-    const settings = appData.aiSettings;
-    const providerSelect = document.getElementById('provider-select');
-    if (providerSelect) providerSelect.value = settings.provider;
-
-    updateModelInput(settings.provider);
-
-    const apiKeyInput = document.getElementById('api-key-input');
-    if (apiKeyInput) apiKeyInput.value = settings.apiKey || '';
-
-    const fallbackKeyInput = document.getElementById('openrouter-fallback-key-input');
-    if (fallbackKeyInput) fallbackKeyInput.value = settings.openrouterFallbackKey || '';
-
-    const baseUrlGroup = document.getElementById('base-url-group');
-    if (baseUrlGroup) baseUrlGroup.style.display = settings.provider === 'custom' ? 'flex' : 'none';
-
-    const baseUrlInput = document.getElementById('base-url-input');
-    if (baseUrlInput) baseUrlInput.value = settings.baseUrl || '';
-
-    ['temperature', 'top-p', 'top-k', 'max-tokens'].forEach(id => {
-        const slider = document.getElementById(`${id}-slider` + (id === 'max-tokens' ? '-input' : ''));
-        const valSpan = document.getElementById(`${id}-value`);
-        const keyMap = { 'temperature': 'temperature', 'top-p': 'topP', 'top-k': 'topK', 'max-tokens': 'maxTokens' };
-        if (slider && settings[keyMap[id]] !== undefined) {
-            slider.value = settings[keyMap[id]];
-            if (valSpan) valSpan.textContent = settings[keyMap[id]];
-        }
-    });
-
-    const reasoningToggle = document.getElementById('disable-reasoning-toggle');
-    if (reasoningToggle) reasoningToggle.checked = settings.disableReasoning !== false;
-}
-
-function saveSettings() {
-    const provider = document.getElementById('provider-select')?.value || 'gemini';
-    const modelInput = document.getElementById('model-input') || document.getElementById('model-select');
-    const model = modelInput?.value.trim() || 'gemini-3.1-flash-lite';
-    const apiKey = document.getElementById('api-key-input')?.value.trim() || '';
-    const fallbackKey = document.getElementById('openrouter-fallback-key-input')?.value.trim() || '';
-    const baseUrl = document.getElementById('base-url-input')?.value.trim() || '';
-
-    appData.aiSettings = {
-        ...appData.aiSettings,
-        provider, model, apiKey,
-        openrouterFallbackKey: fallbackKey,
-        baseUrl,
-        temperature: parseFloat(document.getElementById('temperature-slider')?.value || 0.7),
-        topP: parseFloat(document.getElementById('top-p-slider')?.value || 0.95),
-        topK: parseInt(document.getElementById('top-k-slider')?.value || 40),
-        maxTokens: parseInt(document.getElementById('max-tokens-input')?.value || 1024),
-        disableReasoning: document.getElementById('disable-reasoning-toggle')?.checked ?? true
-    };
-
-    saveData();
-    closeModal('settings-modal');
-    showToast('Settings saved successfully', 'success');
-}
-
-function clearAllData() {
-    if (!confirm('Are you sure you want to wipe all characters, chats, and settings?')) return;
-    localStorage.removeItem(STORAGE_KEY);
-    location.reload();
-}
-
-/* ============================================================================
-   SECTION 10 — AUTOMATED MODEL PINGING
-   ============================================================================ */
-const TEST_MODELS = {
-    openrouter: ['google/gemma-2-9b-it:free','meta-llama/llama-3.1-8b-instruct:free','mistralai/mistral-7b-instruct:free','deepseek/deepseek-r1:free'],
-    gemini: ['gemini-3.1-flash-lite','gemini-3.4-flash-lite','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.8-flash','gemma-2-9b-it'],
-    openai: ['gpt-4o-mini','gpt-3.5-turbo','gpt-4o','o1-mini','o3-mini'],
-    anthropic: ['claude-3-haiku-20240307','claude-3-5-haiku-latest','claude-3-5-sonnet-latest'],
-    groq: ['llama-3.1-8b-instant','mixtral-8x7b-32768','llama-3.3-70b-versatile'],
-    ollama: ['gemma2','llama3.2','mistral','llama3.3','deepseek-r1'],
-    custom: ['gpt-4o-mini']
-};
-
-async function testAndAutoSelectModel() {
-    const provider = document.getElementById('provider-select')?.value || appData.aiSettings.provider;
-    const apiKey = document.getElementById('api-key-input')?.value.trim() || appData.aiSettings.apiKey;
-    const baseUrl = document.getElementById('base-url-input')?.value.trim() || appData.aiSettings.baseUrl;
-    const models = TEST_MODELS[provider];
-    const modelInput = document.getElementById('model-input') || document.getElementById('model-select');
-
-    if (!models || models.length === 0) {
-        showToast('No test models available for this provider.', 'error');
-        return;
-    }
-    if (!apiKey && provider !== 'ollama') {
-        showToast(`Please enter a valid API key for ${provider} first.`, 'error');
-        return;
-    }
-
-    for (const model of models) {
-        try {
-            if (modelInput) {
-                modelInput.value = model;
-                modelInput.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            const success = await pingModel(provider, model, apiKey, baseUrl);
-            if (success) {
-                appData.aiSettings.provider = provider;
-                appData.aiSettings.apiKey = apiKey;
-                appData.aiSettings.model = model;
-                saveData();
-                updateSettingsUI();
-                showToast(`Success! Auto-selected lightweight model: ${model}`, 'success');
-                return;
-            }
-        } catch (err) {
-            console.warn(`Model ${model} failed ping test:`, err.message);
-        }
-    }
-    showToast('All models failed for this provider. Check your API key or quota.', 'error');
-}
-
-async function pingModel(provider, model, apiKey, baseUrl) {
-    let url, headers, body;
-    const testMessages = [{ role: 'user', content: 'Hi' }];
-    const normalizedModel = normalizeModelName(model, provider);
-
-    switch (provider) {
-        case 'openrouter':
-            url = 'https://openrouter.ai/api/v1/chat/completions';
-            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
-            break;
-        case 'gemini':
-            url = `https://generativelanguage.googleapis.com/v1beta/models/${normalizedModel}:generateContent?key=${apiKey}`;
-            headers = { 'Content-Type': 'application/json' };
-            body = { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] };
-            break;
-        case 'openai':
-            url = 'https://api.openai.com/v1/chat/completions';
-            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
-            break;
-        case 'anthropic':
-            url = 'https://api.anthropic.com/v1/messages';
-            headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' };
-            body = { model: normalizedModel, max_tokens: 5, messages: [{ role: 'user', content: 'Hi' }] };
-            break;
-        case 'groq':
-            url = 'https://api.groq.com/openai/v1/chat/completions';
-            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
-            break;
-        case 'ollama':
-            url = (baseUrl || 'http://localhost:11434') + '/v1/chat/completions';
-            headers = { 'Content-Type': 'application/json' };
-            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
-            break;
-        case 'custom':
-            if (!baseUrl) return false;
-            url = baseUrl + '/chat/completions';
-            headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-            body = { model: normalizedModel, messages: testMessages, max_tokens: 5 };
-            break;
-        default: return false;
-    }
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-    return res.ok;
-}
-
-function handlePngImport(e) { /* stub */ }
-
-/* ============================================================================
-   SECTION 11 — CHARACTER RENDERING
-   ============================================================================ */
-async function renderCharacterList(searchTerm = '') {
-    const list = document.getElementById('character-list');
-    if (!list) return;
-    list.innerHTML = '';
-
-    const term = searchTerm.toLowerCase();
-    const filtered = appData.characters.filter(c => c.name.toLowerCase().includes(term));
-
-    if (filtered.length === 0) {
-        const empty = document.createElement('div');
-        empty.style.cssText = 'padding:20px;text-align:center;font-size:12.5px;color:var(--text-3);';
-        empty.textContent = appData.characters.length === 0 ? 'No characters yet. Click + to create one.' : 'No matches.';
-        list.appendChild(empty);
-        return;
-    }
-
-    for (const char of filtered) {
-        const card = document.createElement('div');
-        card.className = `character-card ${char.id === currentCharacterId ? 'active' : ''}`;
-
-        let avatarSrc = '';
-        if (char.avatarId) {
-            const blob = await getAvatar(char.avatarId);
-            if (blob) avatarSrc = URL.createObjectURL(blob);
-        }
-        if (!avatarSrc) avatarSrc = defaultAvatar();
-
-        card.innerHTML = `
-            <img src="${avatarSrc}" alt="">
-            <div class="char-details">
-                <h3>${escapeHtml(char.name)}</h3>
-                <p>${escapeHtml(char.intro || 'No description')}</p>
-            </div>
-        `;
-        card.addEventListener('click', () => {
-            selectCharacter(char.id);
-            if (window.innerWidth <= 768) {
-                document.getElementById('sidebar').classList.remove('open');
-                document.getElementById('sidebar-overlay').classList.add('hidden');
-            }
-        });
-        list.appendChild(card);
-    }
-}
-
-function defaultAvatar() {
-    return "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM4YjVjZjgwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIwIDIxdi0yYTQgNCAwIDAgMC00LTRoOGE0IDQgMCAwIDAgNC00djIiPjxlcGF0aD48Y2lyY2xlIGN4PSIxMiIgY3k9IjciIHI9IjQiPjwvY2lyY2xlPjwvc3ZnPg==";
-}
-
-async function selectCharacter(id) {
-    currentCharacterId = id;
-    renderCharacterList(document.getElementById('search-input').value);
-
-    const char = appData.characters.find(c => c.id === id);
-    if (!char) return;
-
-    document.getElementById('chat-name').textContent = char.name;
-    document.getElementById('chat-subtitle').textContent = char.intro || 'Ready to chat';
-
-    const avatarImg = document.getElementById('chat-avatar');
-    if (char.avatarId) {
-        const blob = await getAvatar(char.avatarId);
-        if (blob) {
-            avatarImg.src = URL.createObjectURL(blob);
-            avatarImg.classList.remove('hidden');
-        }
-    } else {
-        avatarImg.classList.add('hidden');
-    }
-
-    const input = document.getElementById('message-input');
-    input.disabled = false;
-    document.getElementById('send-btn').disabled = false;
-    document.getElementById('clear-chat-btn').classList.remove('hidden');
-    renderChat();
-}
-
-/* ============================================================================
-   SECTION 12 — CHARACTER CREATION
-   ============================================================================ */
-function saveCharacter() {
-    const name = document.getElementById('char-name').value.trim();
-    if (!name) return showToast('Name is required', 'error');
-
-    const newChar = {
-        id: Date.now().toString(),
-        name,
-        gender: document.getElementById('char-gender').value,
-        intro: document.getElementById('char-intro').value.trim(),
-        greetings: document.getElementById('char-greetings').value.trim(),
-        backstory: document.getElementById('char-backstory').value.trim(),
-        privateOnly: document.getElementById('char-private').checked,
-        tags: document.getElementById('char-tags').value.split(',').map(t => t.trim()).filter(Boolean),
-        createdAt: new Date().toISOString(),
-        avatarId: null
-    };
-
-    const fileInput = document.getElementById('char-avatar-file') || document.getElementById('char-avatar');
-    const file = fileInput?.files?.[0];
-    if (file) {
-        newChar.avatarId = newChar.id;
-        saveAvatar(newChar.id, file).catch(console.error);
-    }
-
-    appData.characters.push(newChar);
-    appData.chats[newChar.id] = [];
-    if (newChar.greetings) {
-        appData.chats[newChar.id].push({ role: 'assistant', content: newChar.greetings, ts: Date.now() });
-    }
-
-    saveData();
-    closeModal('character-modal');
-
-    ['char-name', 'char-intro', 'char-greetings', 'char-backstory', 'char-tags'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
-    if (fileInput) fileInput.value = '';
-    const privateToggle = document.getElementById('char-private');
-    if (privateToggle) privateToggle.checked = false;
-
-    renderCharacterList();
-    showToast(`Character "${newChar.name}" created`, 'success');
-    selectCharacter(newChar.id);
-}
-
-/* ============================================================================
-   SECTION 13 — CHAT RENDERING
-   ============================================================================ */
-function renderChat() {
-    const container = document.getElementById('messages-container');
-    if (!container) return;
-    container.innerHTML = '';
-
-    if (!currentCharacterId) return;
-    const messages = appData.chats[currentCharacterId] || [];
-
-    if (messages.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-orb"></div>
-                <h3>No conversation yet</h3>
-                <p>Send a message to begin.</p>
-            </div>
-        `;
-        return;
-    }
-
-    messages.forEach((msg, index) => {
-        const el = document.createElement('div');
-        el.className = `message ${msg.role}`;
-
-        const text = document.createElement('div');
-        text.className = 'message-text';
-        text.textContent = msg.content;
-        el.appendChild(text);
-
-        const actions = document.createElement('div');
-        actions.className = 'message-actions';
-
-        if (msg.role === 'user') {
-            const editBtn = document.createElement('button');
-            editBtn.className = 'msg-action-btn';
-            editBtn.title = 'Edit';
-            editBtn.textContent = '✏️';
-            editBtn.addEventListener('click', (e) => { e.stopPropagation(); startEditMessage(index); });
-            actions.appendChild(editBtn);
-        }
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'msg-action-btn';
-        delBtn.title = 'Delete';
-        delBtn.textContent = '🗑️';
-        delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteMessage(index); });
-        actions.appendChild(delBtn);
-
-        el.appendChild(actions);
-        container.appendChild(el);
-    });
-
-    container.scrollTop = container.scrollHeight;
-}
-
-function startEditMessage(index) {
-    if (!currentCharacterId) return;
-    const messages = appData.chats[currentCharacterId] || [];
-    const msg = messages[index];
-    if (!msg || msg.role !== 'user') return;
-
-    const input = document.getElementById('message-input');
-    input.value = msg.content;
-    input.focus();
-    input.selectionStart = input.selectionEnd = input.value.length;
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 140) + 'px';
-
-    messages.splice(index);
-    saveData();
-    renderChat();
-    showToast('Message loaded — edit and send', 'info');
-}
-
-function deleteMessage(index) {
-    if (!currentCharacterId) return;
-    const messages = appData.chats[currentCharacterId] || [];
-    if (index < 0 || index >= messages.length) return;
-    messages.splice(index, 1);
-    saveData();
-    renderChat();
-    showToast('Message deleted', 'info');
-}
-
-function addMessageToChat(role, content) {
-    if (!currentCharacterId) return;
-    if (!appData.chats[currentCharacterId]) appData.chats[currentCharacterId] = [];
-    appData.chats[currentCharacterId].push({ role, content, ts: Date.now() });
-    saveData();
-    renderChat();
-}
-
-/* ============================================================================
-   SECTION 14 — SEND MESSAGE
-   ============================================================================ */
-async function sendMessage() {
-    const input = document.getElementById('message-input');
-    const text = input.value.trim();
-    if (!text || isGenerating || !currentCharacterId) return;
-
-    input.value = '';
-    input.style.height = 'auto';
-    addMessageToChat('user', text);
-
-    const container = document.getElementById('messages-container');
-    const typing = document.createElement('div');
-    typing.className = 'typing-indicator';
-    typing.id = 'typing-indicator';
-    typing.innerHTML = '<span></span><span></span><span></span>';
-    container.appendChild(typing);
-    container.scrollTop = container.scrollHeight;
-
-    isGenerating = true;
-    document.getElementById('send-btn').disabled = true;
-
-    try {
-        const char = appData.characters.find(c => c.id === currentCharacterId);
-        const raw = await callAIProviderWithFallback(char);
-        document.getElementById('typing-indicator')?.remove();
-        const reply = cleanAIResponse(raw, char.name);
-        addMessageToChat('assistant', reply);
-    } catch (error) {
-        document.getElementById('typing-indicator')?.remove();
-        showToast(error.message, 'error');
-    } finally {
-        isGenerating = false;
-        document.getElementById('send-btn').disabled = false;
-        input.focus();
-    }
-}
-
-function clearCurrentChat() {
-    if (!currentCharacterId) return;
-    if (!confirm('Clear chat history for this character?')) return;
-    const char = appData.characters.find(c => c.id === currentCharacterId);
-    appData.chats[currentCharacterId] = [];
-    if (char?.greetings) {
-        appData.chats[currentCharacterId].push({ role: 'assistant', content: char.greetings, ts: Date.now() });
-    }
-    saveData();
-    renderChat();
-    showToast('Chat cleared', 'success');
-}
-
-/* ============================================================================
-   SECTION 15 — PROVIDER INTEGRATION
-   ============================================================================ */
-async function callAIProviderWithFallback(character) {
-    const settings = appData.aiSettings;
-    let primaryError = null;
-
-    try { return await callAIProvider(character, settings); }
-    catch (error) {
-        primaryError = error;
-        console.warn(`Primary (${settings.provider}) failed:`, error.message);
-    }
-
-    const fbKey = settings.openrouterFallbackKey;
-    if (settings.provider !== 'openrouter' && fbKey) {
-        try {
-            return await callAIProvider(character, {
-                ...settings,
-                provider: 'openrouter',
-                apiKey: fbKey,
-                model: 'google/gemma-2-9b-it:free'
-            });
-        } catch (fbErr) {
-            console.warn('OpenRouter fallback failed:', fbErr.message);
-            throw new Error(`Primary failed: ${primaryError.message}. Fallback failed: ${fbErr.message}`);
-        }
-    }
-    throw new Error(primaryError.message);
-}
-
-async function callAIProvider(character, settings) {
-    if (!settings.apiKey && settings.provider !== 'ollama') {
-        throw new Error('API key missing — open Settings and paste your key.');
-    }
-
-    const model = normalizeModelName(settings.model, settings.provider);
-    const messages = appData.chats[currentCharacterId] || [];
-
-    const systemPrompt = `You are ${character.name}. Gender: ${character.gender}.
-
-BACKGROUND (silent context — never quote or reference it):
-${character.backstory}
-
-YOU MUST FOLLOW THESE RULES EXACTLY:
-
-1. Reply as ${character.name}, first person ONLY.
-2. Output ONLY dialogue and *brief actions in asterisks*.
-3. Do NOT think. Do NOT plan. Do NOT reason. Do NOT narrate thoughts.
-4. Do NOT output any of these words anywhere in your reply:
-    reasoning, analysis, thought, thinking, plan, note, context,
-    format, character:, user:, reaction, response:, length:,
-    internal, motivation, emotion, dialogue:, follow, reply.
-5. Do NOT use any labels, headers, bullets, or numbered lists.
-6. Do NOT use square brackets or anything inside them.
-7. Do NOT describe yourself in third person.
-8. Do NOT write the user's words or actions.
-9. Do NOT mention being an AI or an assistant.
-10. Do NOT preface. Do NOT explain. Do NOT summarize.
-
-You answer directly, in character, and stop.
-Length: 1 to 4 sentences, natural and conversational.
-
-Now answer the user's last message.`;
-
-    const apiMessages = [
-        { role: 'system', content: systemPrompt },
-        ...messages.map(m => ({ role: m.role, content: m.content }))
-    ];
-
-    const gen = {
-        temperature: Number(settings.temperature ?? 0.7),
-        topP: Number(settings.topP ?? 0.95),
-        topK: Number(settings.topK ?? 40),
-        maxTokens: Number(settings.maxTokens ?? 1024)
-    };
-    const killThinking = settings.disableReasoning !== false;
-
-    let url, headers, body;
-    switch (settings.provider) {
-        case 'openrouter':
-            url = 'https://openrouter.ai/api/v1/chat/completions';
-            headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = {
-                model, messages: apiMessages,
-                temperature: gen.temperature, top_p: gen.topP, top_k: gen.topK,
-                max_tokens: gen.maxTokens,
-                frequency_penalty: Number(settings.frequencyPenalty ?? 0),
-                presence_penalty: Number(settings.presencePenalty ?? 0)
-            };
-            if (killThinking) body.reasoning = { effort: 'none', exclude: true };
-            break;
-        case 'gemini':
-            url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
-            headers = { 'Content-Type': 'application/json' };
-            body = {
-                systemInstruction: { parts: [{ text: systemPrompt }] },
-                contents: apiMessages.filter(m => m.role !== 'system').map(m => ({
-                    role: m.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: m.content }]
-                })),
-                generationConfig: {
-                    temperature: gen.temperature, topP: gen.topP,
-                    topK: gen.topK, maxOutputTokens: gen.maxTokens
-                }
-            };
-            if (killThinking && (model.includes('gemini-2.5') || model.includes('gemini-3'))) {
-                body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
-            }
-            break;
-        case 'openai':
-            url = 'https://api.openai.com/v1/chat/completions';
-            headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = {
-                model, messages: apiMessages,
-                temperature: gen.temperature, top_p: gen.topP, max_tokens: gen.maxTokens,
-                frequency_penalty: Number(settings.frequencyPenalty ?? 0),
-                presence_penalty: Number(settings.presencePenalty ?? 0)
-            };
-            break;
-        case 'anthropic':
-            url = 'https://api.anthropic.com/v1/messages';
-            headers = {
-                'x-api-key': settings.apiKey,
-                'anthropic-version': '2023-06-01',
-                'Content-Type': 'application/json'
-            };
-            body = {
-                model, max_tokens: gen.maxTokens,
-                temperature: gen.temperature, top_p: gen.topP,
-                system: systemPrompt,
-                messages: apiMessages.filter(m => m.role !== 'system').map(m => ({
-                    role: m.role === 'assistant' ? 'assistant' : 'user',
-                    content: m.content
-                }))
-            };
-            break;
-        case 'groq':
-            url = 'https://api.groq.com/openai/v1/chat/completions';
-            headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = {
-                model, messages: apiMessages,
-                temperature: gen.temperature, top_p: gen.topP, max_tokens: gen.maxTokens
-            };
-            break;
-        case 'ollama':
-            url = (settings.baseUrl || 'http://localhost:11434') + '/v1/chat/completions';
-            headers = { 'Content-Type': 'application/json' };
-            body = {
-                model, messages: apiMessages,
-                temperature: gen.temperature, top_p: gen.topP,
-                top_k: gen.topK, max_tokens: gen.maxTokens
-            };
-            break;
-        case 'custom':
-            url = settings.baseUrl + '/chat/completions';
-            headers = { 'Authorization': `Bearer ${settings.apiKey}`, 'Content-Type': 'application/json' };
-            body = {
-                model, messages: apiMessages,
-                temperature: gen.temperature, top_p: gen.topP, max_tokens: gen.maxTokens
-            };
-            break;
-        default: throw new Error('Unsupported provider');
-    }
-
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        const apiMsg = err.error?.message || err.message || `HTTP ${res.status}`;
-        if (settings.provider === 'gemini' && /quota|limit: 0|free_tier/i.test(apiMsg)) {
-            throw new Error(`Gemini free tier exhausted for this project. Try a new Google Cloud project or switch to OpenRouter.`);
-        }
-        if (settings.provider === 'openrouter' && /auth/i.test(apiMsg)) {
-            throw new Error(`OpenRouter rejected your key. Keys must start with "sk-or-". Get one at openrouter.ai/keys`);
-        }
-        throw new Error(apiMsg);
-    }
-
-    const data = await res.json();
-    let text = '';
-    if (settings.provider === 'gemini') {
-        if (data.promptFeedback?.blockReason) throw new Error(`Gemini blocked: ${data.promptFeedback.blockReason}`);
-        text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    } else if (settings.provider === 'anthropic') {
-        text = data.content?.[0]?.text || '';
-    } else {
-        text = data.choices?.[0]?.message?.content || '';
-    }
-    return text;
-}
+    toast.innerHTML =
